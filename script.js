@@ -437,6 +437,331 @@ function showToast(msg) {
   toastTimer = setTimeout(() => toast.classList.remove("show"), 2400);
 }
 
+/* =========================================================
+   Navigation — page switching & content for every nav item
+   ========================================================= */
+
+const PAGE_TITLES = {
+  "dashboard": "Dashboard",
+  "equipment-all": "All Equipment",
+  "equipment-categories": "Equipment Categories",
+  "schedule": "Schedule",
+  "checking": "Scheduled IT Equipment Checking",
+  "issues": "Issues / Service",
+  "reports-checking": "Checking Summary Report",
+  "reports-department": "Department Summary Report",
+  "users": "System Users",
+  "settings": "Settings"
+};
+
+function statCardsMarkup() {
+  const total = DATA.length;
+  const checkedCount = DATA.filter(r => r.date !== null).length;
+  const pending = DATA.filter(r => r.status === "Due").length;
+  const issues = DATA.filter(r => r.status === "With Issue").length;
+  const pct = total ? ((checkedCount / total) * 100).toFixed(2) : "0.00";
+
+  return `
+    <div class="stat-card">
+      <div class="stat-icon blue"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg></div>
+      <div class="stat-body">
+        <p class="stat-label">Total Equipment</p>
+        <p class="stat-value">${total}</p>
+        <span class="stat-sub text-muted">Across all departments</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon green"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg></div>
+      <div class="stat-body">
+        <p class="stat-label">Checked</p>
+        <p class="stat-value">${checkedCount}</p>
+        <span class="stat-sub good">${pct}% of total</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon amber"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg></div>
+      <div class="stat-body">
+        <p class="stat-label">Pending / Due</p>
+        <p class="stat-value">${pending}</p>
+        <span class="stat-sub amber-text">To be checked</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon red"><svg viewBox="0 0 24 24"><path d="M12 3L2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></svg></div>
+      <div class="stat-body">
+        <p class="stat-label">With Issues</p>
+        <p class="stat-value">${issues}</p>
+        <span class="stat-sub red-text">Need attention</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderDashboardPage() {
+  document.getElementById("dashStats").innerHTML = statCardsMarkup();
+
+  const recent = DATA.filter(r => r.date).slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6);
+  const recentList = document.getElementById("recentChecksList");
+  recentList.innerHTML = recent.length
+    ? recent.map(r => `
+      <div class="mini-row">
+        <div class="mini-row-main">
+          <div class="mini-row-title">${escapeHtml(r.equipment)} — ${escapeHtml(r.department)}</div>
+          <div class="mini-row-sub">${escapeHtml(r.user)} · ${formatDate(r.date)}</div>
+        </div>
+        <span class="status-pill ${statusClass(r.status)}">${r.status}</span>
+      </div>`).join("")
+    : '<div class="mini-empty">No checks recorded yet.</div>';
+
+  const issueCounts = {};
+  DATA.forEach(r => { if (r.status === "With Issue") issueCounts[r.department] = (issueCounts[r.department] || 0) + 1; });
+  const ranked = Object.entries(issueCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const attentionList = document.getElementById("attentionList");
+  attentionList.innerHTML = ranked.length
+    ? ranked.map(([dept, count]) => `
+      <div class="mini-row">
+        <div class="mini-row-main">
+          <div class="mini-row-title">${escapeHtml(dept)}</div>
+          <div class="mini-row-sub">${count} equipment flagged with issues</div>
+        </div>
+        <span class="mini-row-badge red-text">${count}</span>
+      </div>`).join("")
+    : '<div class="mini-empty">No open issues right now.</div>';
+}
+
+function renderEquipmentAllPage() {
+  const cap = 60;
+  const capped = DATA.slice(0, cap);
+  document.getElementById("equipAllBody").innerHTML = capped.map(r => {
+    const icon = deptIcon(r.department);
+    return `<tr>
+      <td><div class="dept-cell"><span class="dept-icon ${icon.cls}"><svg viewBox="0 0 24 24">${icon.path}</svg></span>${escapeHtml(r.department)}</div></td>
+      <td>${escapeHtml(r.equipment)}</td>
+      <td>${escapeHtml(r.user)}</td>
+      <td><span class="status-pill ${statusClass(r.status)}">${r.status}</span></td>
+    </tr>`;
+  }).join("");
+  document.getElementById("equipAllCount").textContent = `${DATA.length} total`;
+  document.getElementById("equipAllShowing").textContent = `Showing ${Math.min(cap, DATA.length)} of ${DATA.length} entries`;
+}
+
+function renderCategoriesPage() {
+  document.getElementById("categoryStats").innerHTML = DEPARTMENTS.map(dept => {
+    const items = DATA.filter(r => r.department === dept);
+    const icon = deptIcon(dept);
+    const issueCount = items.filter(i => i.status === "With Issue").length;
+    return `<div class="stat-card">
+      <div class="stat-icon ${icon.cls}"><svg viewBox="0 0 24 24">${icon.path}</svg></div>
+      <div class="stat-body">
+        <p class="stat-label">${escapeHtml(dept)}</p>
+        <p class="stat-value">${items.length}</p>
+        <span class="stat-sub ${issueCount ? "red-text" : "text-muted"}">${issueCount} with issues</span>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function renderSchedulePage() {
+  const year = 2026, month = 7; // August 2026
+  const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  document.getElementById("calendarLabel").textContent = `${monthNames[month]} ${year}`;
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayDate = 18;
+
+  const activeDays = new Set();
+  DATA.forEach(r => {
+    if (r.date) {
+      const d = new Date(r.date + "T00:00:00");
+      if (d.getFullYear() === year && d.getMonth() === month) activeDays.add(d.getDate());
+    }
+  });
+
+  const dow = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+  let html = dow.map(d => `<div class="cal-dow">${d}</div>`).join("");
+  for (let i = 0; i < firstDay; i++) html += `<div class="cal-day empty"></div>`;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const classes = ["cal-day"];
+    if (day === todayDate) classes.push("today");
+    else if (activeDays.has(day)) classes.push("has-due");
+    html += `<div class="${classes.join(" ")}">${day}</div>`;
+  }
+  document.getElementById("calendarGrid").innerHTML = html;
+
+  const dueItems = DATA.filter(r => r.status === "Due");
+  const dueList = document.getElementById("dueList");
+  if (!dueItems.length) {
+    dueList.innerHTML = '<div class="mini-empty">Nothing due right now.</div>';
+  } else {
+    const shown = dueItems.slice(0, 20);
+    let listHtml = shown.map(r => `
+      <div class="mini-row">
+        <div class="mini-row-main">
+          <div class="mini-row-title">${escapeHtml(r.equipment)} — ${escapeHtml(r.department)}</div>
+          <div class="mini-row-sub">Assigned to ${escapeHtml(r.user)}</div>
+        </div>
+        <span class="status-pill status-due">Due</span>
+      </div>`).join("");
+    if (dueItems.length > shown.length) {
+      listHtml += `<div class="mini-empty">+ ${dueItems.length - shown.length} more equipment due for checking.</div>`;
+    }
+    dueList.innerHTML = listHtml;
+  }
+}
+
+function renderIssuesPage() {
+  document.getElementById("issuesStats").innerHTML = statCardsMarkup();
+  const issues = DATA.filter(r => r.status === "With Issue");
+  document.getElementById("ticketGrid").innerHTML = issues.length
+    ? issues.map(r => `
+      <div class="ticket-card">
+        <div class="ticket-card-head">
+          <div>
+            <div class="ticket-equip">${escapeHtml(r.equipment)}</div>
+            <div class="ticket-dept">${escapeHtml(r.department)}</div>
+          </div>
+          <span class="status-pill status-issue">With Issue</span>
+        </div>
+        <p class="ticket-notes">${escapeHtml(r.notes)}</p>
+        <div class="ticket-meta">
+          <span>${escapeHtml(r.user)}</span>
+          <span>${r.date ? formatDate(r.date) : "\u2013"}</span>
+        </div>
+      </div>`).join("")
+    : '<div class="mini-empty">No open tickets. Nice work.</div>';
+}
+
+function renderReportsCheckingPage() {
+  document.getElementById("reportsCheckingStats").innerHTML = statCardsMarkup();
+  const total = DATA.length;
+  const counts = { "Good": 0, "With Issue": 0, "For Monitoring": 0, "Due": 0 };
+  DATA.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+  const barMap = [["Good", "good"], ["With Issue", "issue"], ["For Monitoring", "monitoring"], ["Due", "due"]];
+  document.getElementById("statusBarList").innerHTML = barMap.map(([label, cls]) => {
+    const count = counts[label] || 0;
+    const pct = total ? ((count / total) * 100).toFixed(1) : "0.0";
+    return `<div>
+      <div class="bar-row-top"><span>${label}</span><span>${count} · ${pct}%</span></div>
+      <div class="bar-track"><div class="bar-fill ${cls}" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join("");
+}
+
+function renderReportsDepartmentPage() {
+  document.getElementById("deptSummaryBody").innerHTML = DEPARTMENTS.map(dept => {
+    const items = DATA.filter(r => r.department === dept);
+    const good = items.filter(r => r.status === "Good").length;
+    const issue = items.filter(r => r.status === "With Issue").length;
+    const monitor = items.filter(r => r.status === "For Monitoring").length;
+    const due = items.filter(r => r.status === "Due").length;
+    return `<tr>
+      <td>${escapeHtml(dept)}</td>
+      <td>${items.length}</td>
+      <td>${good}</td>
+      <td>${issue}</td>
+      <td>${monitor}</td>
+      <td>${due}</td>
+    </tr>`;
+  }).join("");
+}
+
+function renderUsersPage() {
+  const map = new Map();
+  DATA.forEach(r => {
+    if (!map.has(r.user)) map.set(r.user, { department: r.department, count: 0, lastDate: null });
+    const entry = map.get(r.user);
+    entry.count++;
+    if (r.date && (!entry.lastDate || r.date > entry.lastDate)) entry.lastDate = r.date;
+  });
+  const rows = Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  document.getElementById("usersCount").textContent = `${rows.length} users`;
+  document.getElementById("usersBody").innerHTML = rows.map(([name, info]) => `
+    <tr>
+      <td>${escapeHtml(name)}</td>
+      <td>${escapeHtml(info.department)}</td>
+      <td>${info.count}</td>
+      <td>${info.lastDate ? formatDate(info.lastDate) : "\u2013"}</td>
+    </tr>`).join("");
+}
+
+const PAGE_RENDERERS = {
+  "dashboard": renderDashboardPage,
+  "equipment-all": renderEquipmentAllPage,
+  "equipment-categories": renderCategoriesPage,
+  "schedule": renderSchedulePage,
+  "checking": () => render(),
+  "issues": renderIssuesPage,
+  "reports-checking": renderReportsCheckingPage,
+  "reports-department": renderReportsDepartmentPage,
+  "users": renderUsersPage,
+  "settings": () => {}
+};
+
+const pageTitleEl = document.getElementById("pageTitle");
+
+function switchPage(page) {
+  if (!PAGE_TITLES[page]) return;
+
+  document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+  const target = document.getElementById("page-" + page);
+  if (target) target.classList.add("active");
+
+  pageTitleEl.textContent = PAGE_TITLES[page];
+
+  document.querySelectorAll(".nav-item[data-page], .sub-item[data-page]").forEach(el => {
+    el.classList.toggle("active", el.dataset.page === page);
+  });
+
+  document.querySelectorAll(".nav-group-toggle").forEach(t => t.classList.remove("open"));
+  document.querySelectorAll(".submenu").forEach(s => s.classList.remove("open"));
+  const activeSub = document.querySelector(`.sub-item[data-page="${page}"]`);
+  if (activeSub) {
+    const group = activeSub.closest(".nav-group");
+    group.querySelector(".nav-group-toggle").classList.add("open");
+    group.querySelector(".submenu").classList.add("open");
+  }
+
+  const renderer = PAGE_RENDERERS[page];
+  if (renderer) renderer();
+
+  if (window.innerWidth <= 900) {
+    document.getElementById("sidebar").classList.remove("open");
+  }
+
+  window.scrollTo({ top: 0, behavior: "auto" });
+}
+
+document.querySelectorAll(".stat-link[data-page]").forEach(link => {
+  link.addEventListener("click", (e) => {
+    e.preventDefault();
+    switchPage(link.dataset.page);
+  });
+});
+
+document.getElementById("navRoot").addEventListener("click", (e) => {
+  const groupToggle = e.target.closest(".nav-group-toggle");
+  if (groupToggle) {
+    const group = groupToggle.closest(".nav-group");
+    const submenu = group.querySelector(".submenu");
+    const isOpen = groupToggle.classList.contains("open");
+
+    document.querySelectorAll(".nav-group-toggle").forEach(t => t.classList.remove("open"));
+    document.querySelectorAll(".submenu").forEach(s => s.classList.remove("open"));
+
+    if (!isOpen) {
+      groupToggle.classList.add("open");
+      submenu.classList.add("open");
+    }
+    return;
+  }
+
+  const navBtn = e.target.closest("[data-page]");
+  if (navBtn) {
+    switchPage(navBtn.dataset.page);
+  }
+});
+
 /* ---------------- Sidebar toggle (mobile + desktop) ---------------- */
 const sidebar = document.getElementById("sidebar");
 const hamburger = document.getElementById("hamburger");
@@ -458,4 +783,4 @@ document.addEventListener("keydown", (e) => {
 
 /* ---------------- Init ---------------- */
 initFilters();
-render();
+switchPage("checking");
