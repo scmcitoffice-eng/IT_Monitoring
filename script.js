@@ -16,15 +16,16 @@
         won't load from a plain file:// double-click. Easiest:
           npx serve .
         or deploy the folder with Firebase Hosting.
-   On first load with an empty collection, the app seeds ~245
-   sample records automatically (one-time).
+   On first-ever load, the app seeds ~245 sample records once and
+   marks a meta doc (appMeta/seedStatus) so deleting records later
+   — including "Delete All" — never triggers a re-seed.
    ========================================================= */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import { getAnalytics, isSupported as isAnalyticsSupported } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-analytics.js";
 import {
   getFirestore, collection, doc, addDoc, updateDoc, deleteDoc,
-  onSnapshot, getDocs, writeBatch, query, orderBy, serverTimestamp
+  onSnapshot, getDocs, getDoc, setDoc, writeBatch, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -48,6 +49,10 @@ isAnalyticsSupported()
 
 const CHECKS_COLLECTION = "equipmentChecks";
 const checksRef = collection(db, CHECKS_COLLECTION);
+
+// Marks whether the sample dataset has ever been seeded, so intentional
+// deletions (e.g. "Delete All") never get auto-refilled on next load.
+const seedStatusRef = doc(db, "appMeta", "seedStatus");
 
 const DEPARTMENTS = [
   "Accounting and Finance", "Administrative Department", "Dietary", "GSS",
@@ -1070,12 +1075,19 @@ document.addEventListener("keydown", (e) => {
 /* ---------------- Firestore realtime sync ---------------- */
 let seedAttempted = false;
 
-async function seedIfEmpty() {
+async function seedIfNeeded() {
   if (seedAttempted) return;
   seedAttempted = true;
   try {
-    const snap = await getDocs(query(checksRef));
-    if (!snap.empty) return;
+    const metaSnap = await getDoc(seedStatusRef);
+    if (metaSnap.exists() && metaSnap.data().seeded) return; // already seeded before — never reseed, even if now empty
+
+    const existing = await getDocs(query(checksRef));
+    if (!existing.empty) {
+      // Data already present from before this guard existed — just record it, don't duplicate.
+      await setDoc(seedStatusRef, { seeded: true, seededAt: serverTimestamp() });
+      return;
+    }
 
     const seedRows = buildSeedData();
     const batchSize = 400;
@@ -1087,6 +1099,7 @@ async function seedIfEmpty() {
       });
       await batch.commit();
     }
+    await setDoc(seedStatusRef, { seeded: true, seededAt: serverTimestamp() });
   } catch (err) {
     console.error("Firestore seeding failed:", err);
     showToast("Could not load starting data into Firestore.");
@@ -1103,11 +1116,10 @@ function startRealtimeSync() {
       if (!dataLoaded) {
         dataLoaded = true;
         switchPage("checking");
+        seedIfNeeded();
       } else {
         rerenderCurrentPage();
       }
-
-      if (snapshot.empty) seedIfEmpty();
     },
     (err) => {
       console.error("Firestore sync error:", err);
