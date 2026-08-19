@@ -193,6 +193,13 @@
             </select>
           </div>
 
+          <div class="select-field">
+            <label>Location</label>
+            <select id="locationFilter">
+              <option value="All">All</option>
+            </select>
+          </div>
+
           <div class="select-field date-field">
             <label>Date Checked</label>
             <div class="date-input-wrap">
@@ -214,6 +221,7 @@
               <tr>
                 <th>Department</th>
                 <th>Equipment</th>
+                <th>Location</th>
                 <th>User</th>
                 <th>Date Checked</th>
                 <th>Status</th>
@@ -271,6 +279,7 @@
               <tr>
                 <th>Department</th>
                 <th>Equipment</th>
+                <th>Location</th>
                 <th>Assigned User</th>
                 <th>Status</th>
               </tr>
@@ -476,6 +485,9 @@
       </label>
       <label>Equipment
         <input type="text" id="fEquipment" placeholder="e.g. PC-015 (Desktop)" required />
+      </label>
+      <label>Location
+        <input type="text" id="fLocation" placeholder="e.g. IT Office, 6th Floor" required />
       </label>
       <label>User
         <input type="text" id="fUser" placeholder="e.g. Juan Dela Cruz" required />

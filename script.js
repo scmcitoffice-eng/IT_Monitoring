@@ -25,17 +25,34 @@ const STATUS_MAP = {
   "For Monitoring": "status-monitoring"
 };
 
+/* Rooms/areas each department's equipment can physically be found in */
+const DEPT_LOCATIONS = {
+  "Human Resources": ["HR Office, 3rd Floor", "HR Records Room, 3rd Floor"],
+  "Laboratory": ["Lab Room 1, Ground Floor", "Lab Room 2, Ground Floor", "Specimen Collection, Ground Floor"],
+  "Accounting": ["Accounting Office, 3rd Floor", "Billing Section, 3rd Floor"],
+  "Medical Records": ["Records Room A, 2nd Floor", "Records Room B, 2nd Floor"],
+  "Pharmacy": ["Pharmacy Counter, Ground Floor", "Pharmacy Stockroom, Ground Floor"],
+  "Nursing Station": ["Nurses Station A, 4th Floor", "Nurses Station B, 5th Floor", "Nurses Station C, 5th Floor"],
+  "Admitting": ["Admitting Desk, Ground Floor", "Triage Area, Ground Floor"],
+  "IT Department": ["IT Office, 6th Floor", "Server Room, 6th Floor", "IT Storage, 6th Floor"]
+};
+
+function pickLocation(dept, seed) {
+  const options = DEPT_LOCATIONS[dept] || ["Main Building, Ground Floor"];
+  return options[seed % options.length];
+}
+
 /* Seed dataset — mirrors the design, extended to 245 records */
 function buildSeedData() {
   const base = [
-    ["Human Resources", "PC-001 (Desktop)", "Juan Dela Cruz", "2026-08-18", "Good", "No issues found."],
-    ["Laboratory", "Epson L5290 (Printer)", "Maria Santos", "2026-08-18", "With Issue", "ADF feeder problem."],
-    ["Accounting", "PC-014 (Desktop)", "Mark Anthony", null, "Due", "Scheduled check"],
-    ["Medical Records", "Epson L120 (Printer)", "Ana Reyes", "2026-08-17", "With Issue", "Not printing properly."],
-    ["Pharmacy", "PC-003 (Desktop)", "Rhea Morales", "2026-08-17", "Good", "All functioning well."],
-    ["Nursing Station", "PC-009 (Desktop)", "Jose P. Garcia", "2026-08-16", "For Monitoring", "Slow performance."],
-    ["Admitting", "Canon G3010 (Printer)", "Liza Mendoza", "2026-08-16", "Good", "No issues found."],
-    ["IT Department", "Server (Production)", "Lito Cabajar", "2026-08-15", "Good", "System normal."]
+    ["Human Resources", "PC-001 (Desktop)", "Juan Dela Cruz", "2026-08-18", "Good", "No issues found.", "HR Office, 3rd Floor"],
+    ["Laboratory", "Epson L5290 (Printer)", "Maria Santos", "2026-08-18", "With Issue", "ADF feeder problem.", "Lab Room 1, Ground Floor"],
+    ["Accounting", "PC-014 (Desktop)", "Mark Anthony", null, "Due", "Scheduled check", "Accounting Office, 3rd Floor"],
+    ["Medical Records", "Epson L120 (Printer)", "Ana Reyes", "2026-08-17", "With Issue", "Not printing properly.", "Records Room A, 2nd Floor"],
+    ["Pharmacy", "PC-003 (Desktop)", "Rhea Morales", "2026-08-17", "Good", "All functioning well.", "Pharmacy Counter, Ground Floor"],
+    ["Nursing Station", "PC-009 (Desktop)", "Jose P. Garcia", "2026-08-16", "For Monitoring", "Slow performance.", "Nurses Station A, 4th Floor"],
+    ["Admitting", "Canon G3010 (Printer)", "Liza Mendoza", "2026-08-16", "Good", "No issues found.", "Admitting Desk, Ground Floor"],
+    ["IT Department", "Server (Production)", "Lito Cabajar", "2026-08-15", "Good", "System normal.", "Server Room, 6th Floor"]
   ];
 
   const equipmentTypes = [
@@ -56,7 +73,7 @@ function buildSeedData() {
     "Due": ["Scheduled check", "Awaiting technician", "Queued for inspection"]
   };
 
-  const rows = base.map((r, i) => ({ id: i + 1, department: r[0], equipment: r[1], user: r[2], date: r[3], status: r[4], notes: r[5] }));
+  const rows = base.map((r, i) => ({ id: i + 1, department: r[0], equipment: r[1], user: r[2], date: r[3], status: r[4], notes: r[5], location: r[6] }));
 
   let id = rows.length + 1;
   const totalTarget = 245;
@@ -72,6 +89,7 @@ function buildSeedData() {
     const date = hasDate ? `2026-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}` : null;
     const notesArr = notesByStatus[status];
     const notes = notesArr[id % notesArr.length];
+    const location = pickLocation(dept, id);
     rows.push({
       id,
       department: dept,
@@ -79,7 +97,8 @@ function buildSeedData() {
       user,
       date,
       status,
-      notes
+      notes,
+      location
     });
     id++;
   }
@@ -88,12 +107,14 @@ function buildSeedData() {
 
 const DATA = buildSeedData();
 
+
 /* ---------------- State ---------------- */
 const state = {
   search: "",
   department: "All",
   status: "All",
   date: "All",
+  location: "All",
   page: 1,
   pageSize: 8
 };
@@ -104,6 +125,7 @@ const searchInput = document.getElementById("searchInput");
 const deptFilter = document.getElementById("deptFilter");
 const statusFilter = document.getElementById("statusFilter");
 const dateFilter = document.getElementById("dateFilter");
+const locationFilter = document.getElementById("locationFilter");
 const showingText = document.getElementById("showingText");
 const paginationEl = document.getElementById("pagination");
 
@@ -124,6 +146,7 @@ const cancelAdd = document.getElementById("cancelAdd");
 const addForm = document.getElementById("addForm");
 const fDept = document.getElementById("fDept");
 const fEquipment = document.getElementById("fEquipment");
+const fLocation = document.getElementById("fLocation");
 const fUser = document.getElementById("fUser");
 const fDate = document.getElementById("fDate");
 const fStatus = document.getElementById("fStatus");
@@ -151,6 +174,14 @@ function initFilters() {
     opt.textContent = s;
     statusFilter.appendChild(opt);
   });
+
+  const allLocations = Array.from(new Set(DATA.map(r => r.location))).sort();
+  allLocations.forEach(loc => {
+    const opt = document.createElement("option");
+    opt.value = loc;
+    opt.textContent = loc;
+    locationFilter.appendChild(opt);
+  });
 }
 
 /* ---------------- Formatting helpers ---------------- */
@@ -175,8 +206,9 @@ function getFiltered() {
     if (state.department !== "All" && row.department !== state.department) return false;
     if (state.status !== "All" && row.status !== state.status) return false;
     if (state.date !== "All" && row.date !== state.date) return false;
+    if (state.location !== "All" && row.location !== state.location) return false;
     if (q) {
-      const hay = `${row.department} ${row.equipment} ${row.user} ${row.notes}`.toLowerCase();
+      const hay = `${row.department} ${row.equipment} ${row.user} ${row.notes} ${row.location}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -197,7 +229,7 @@ function render() {
   if (pageRows.length === 0) {
     const tr = document.createElement("tr");
     tr.className = "empty-row";
-    tr.innerHTML = `<td colspan="7">No equipment records match your filters.</td>`;
+    tr.innerHTML = `<td colspan="8">No equipment records match your filters.</td>`;
     tableBody.appendChild(tr);
   } else {
     pageRows.forEach(row => {
@@ -211,6 +243,10 @@ function render() {
           </div>
         </td>
         <td>${row.equipment}</td>
+        <td class="location-cell">
+          <svg class="pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.7-6.5-11A6.5 6.5 0 0 1 12 3.5 6.5 6.5 0 0 1 18.5 10c0 5.3-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.2"/></svg>
+          ${escapeHtml(row.location)}
+        </td>
         <td>${row.user}</td>
         <td>${row.date ? formatDate(row.date) : '<span class="text-muted">\u2013</span>'}</td>
         <td><span class="status-pill ${statusClass(row.status)}">${row.status}</span></td>
@@ -339,6 +375,12 @@ statusFilter.addEventListener("change", (e) => {
   render();
 });
 
+locationFilter.addEventListener("change", (e) => {
+  state.location = e.target.value;
+  state.page = 1;
+  render();
+});
+
 dateFilter.addEventListener("click", () => {
   // simple prompt-based date picker fallback (native calendar substitute)
   const picker = document.createElement("input");
@@ -372,6 +414,7 @@ function openViewModal(id) {
   viewModalBody.innerHTML = `
     <div class="detail-row"><span>Department</span><span>${escapeHtml(row.department)}</span></div>
     <div class="detail-row"><span>Equipment</span><span>${escapeHtml(row.equipment)}</span></div>
+    <div class="detail-row"><span>Location</span><span>${escapeHtml(row.location)}</span></div>
     <div class="detail-row"><span>User</span><span>${escapeHtml(row.user)}</span></div>
     <div class="detail-row"><span>Date Checked</span><span>${row.date ? formatDate(row.date) : "\u2013"}</span></div>
     <div class="detail-row"><span>Status</span><span><span class="status-pill ${statusClass(row.status)}">${row.status}</span></span></div>
@@ -400,8 +443,14 @@ viewModalOverlay.addEventListener("click", (e) => {
 function openAddModal() {
   addForm.reset();
   fDate.valueAsDate = new Date();
+  fLocation.value = (DEPT_LOCATIONS[fDept.value] || [""])[0];
   addModalOverlay.classList.add("open");
 }
+
+fDept.addEventListener("change", () => {
+  const options = DEPT_LOCATIONS[fDept.value];
+  if (options && options.length) fLocation.value = options[0];
+});
 
 addCheckingBtn.addEventListener("click", openAddModal);
 addModalClose.addEventListener("click", () => addModalOverlay.classList.remove("open"));
@@ -416,6 +465,7 @@ addForm.addEventListener("submit", (e) => {
     id: DATA.length ? Math.max(...DATA.map(r => r.id)) + 1 : 1,
     department: fDept.value,
     equipment: fEquipment.value.trim(),
+    location: fLocation.value.trim() || "Location not specified",
     user: fUser.value.trim(),
     date: fDate.value || null,
     status: fStatus.value,
@@ -507,7 +557,7 @@ function renderDashboardPage() {
       <div class="mini-row">
         <div class="mini-row-main">
           <div class="mini-row-title">${escapeHtml(r.equipment)} — ${escapeHtml(r.department)}</div>
-          <div class="mini-row-sub">${escapeHtml(r.user)} · ${formatDate(r.date)}</div>
+          <div class="mini-row-sub">${escapeHtml(r.location)} · ${escapeHtml(r.user)} · ${formatDate(r.date)}</div>
         </div>
         <span class="status-pill ${statusClass(r.status)}">${r.status}</span>
       </div>`).join("")
@@ -537,6 +587,7 @@ function renderEquipmentAllPage() {
     return `<tr>
       <td><div class="dept-cell"><span class="dept-icon ${icon.cls}"><svg viewBox="0 0 24 24">${icon.path}</svg></span>${escapeHtml(r.department)}</div></td>
       <td>${escapeHtml(r.equipment)}</td>
+      <td class="location-cell"><svg class="pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.7-6.5-11A6.5 6.5 0 0 1 12 3.5 6.5 6.5 0 0 1 18.5 10c0 5.3-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.2"/></svg>${escapeHtml(r.location)}</td>
       <td>${escapeHtml(r.user)}</td>
       <td><span class="status-pill ${statusClass(r.status)}">${r.status}</span></td>
     </tr>`;
@@ -623,6 +674,7 @@ function renderIssuesPage() {
           </div>
           <span class="status-pill status-issue">With Issue</span>
         </div>
+        <p class="ticket-location"><svg class="pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.7-6.5-11A6.5 6.5 0 0 1 12 3.5 6.5 6.5 0 0 1 18.5 10c0 5.3-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.2"/></svg>${escapeHtml(r.location)}</p>
         <p class="ticket-notes">${escapeHtml(r.notes)}</p>
         <div class="ticket-meta">
           <span>${escapeHtml(r.user)}</span>
