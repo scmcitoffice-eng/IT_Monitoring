@@ -3,20 +3,44 @@
    ========================================================= */
 
 const DEPARTMENTS = [
-  "Human Resources", "Laboratory", "Accounting", "Medical Records",
-  "Pharmacy", "Nursing Station", "Admitting", "IT Department"
+  "Accounting and Finance", "Administrative Department", "Dietary", "GSS",
+  "Heart Station", "HR", "Imaging", "IMRS", "IT", "Laboratory",
+  "Marketing", "Medical Records", "Nursing", "OPD", "Pharmacy",
+  "Procurement", "QA", "Rehab", "RTU", "Social Service"
 ];
 
-const DEPT_ICON = {
-  "Human Resources": { cls: "dept-hr", path: '<circle cx="9" cy="8" r="3"/><path d="M2.5 20c0-3.4 2.9-6 6.5-6s6.5 2.6 6.5 6"/><path d="M16 4.7c1.5.4 2.6 1.8 2.6 3.4 0 1.6-1.1 3-2.6 3.4M21.5 20c0-2.8-1.9-5-4.5-5.7"/>' },
-  "Laboratory": { cls: "dept-lab", path: '<path d="M9 2h6M10 2v6.5L4.5 18a2 2 0 0 0 1.7 3h11.6a2 2 0 0 0 1.7-3L14 8.5V2"/><path d="M7.5 14h9"/>' },
-  "Accounting": { cls: "dept-acct", path: '<rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M8 7h8M8 11h3M8 15h3M14 11h2M14 15h2"/>' },
-  "Medical Records": { cls: "dept-mr", path: '<path d="M3 7l2-2h6l2 2h8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>' },
-  "Pharmacy": { cls: "dept-pharm", path: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/>' },
-  "Nursing Station": { cls: "dept-nurse", path: '<path d="M9 3v4M15 3v4M6 7h12v5a6 6 0 0 1-12 0V7z"/><path d="M12 12v6M9 21h6"/>' },
-  "Admitting": { cls: "dept-admit", path: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>' },
-  "IT Department": { cls: "dept-it", path: '<rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8M12 17v4"/>' }
+/* Line-art icon paths per department (24x24 viewBox) */
+const DEPT_ICON_PATHS = {
+  "Accounting and Finance": '<rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M8 7h8M8 11h3M8 15h3M14 11h2M14 15h2"/>',
+  "Administrative Department": '<rect x="3" y="7" width="18" height="12" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18"/>',
+  "Dietary": '<path d="M7 2v7a2 2 0 0 1-4 0V2M5 9v13M14 2c-1.7 0-3 2-3 4.5S12.3 11 14 11m0-9v20"/>',
+  "GSS": '<path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5l8-3z"/>',
+  "Heart Station": '<path d="M12 21s-7-4.5-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2.5 4.5-9.5 9-9.5 9z"/><path d="M6 12h3l1.5-3L12 15l1.5-3H18"/>',
+  "HR": '<circle cx="9" cy="8" r="3"/><path d="M2.5 20c0-3.4 2.9-6 6.5-6s6.5 2.6 6.5 6"/><path d="M16 4.7c1.5.4 2.6 1.8 2.6 3.4 0 1.6-1.1 3-2.6 3.4M21.5 20c0-2.8-1.9-5-4.5-5.7"/>',
+  "Imaging": '<rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="4"/><path d="M9 6l1.5-2h3L15 6"/>',
+  "IMRS": '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
+  "IT": '<rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8M12 17v4"/>',
+  "Laboratory": '<path d="M9 2h6M10 2v6.5L4.5 18a2 2 0 0 0 1.7 3h11.6a2 2 0 0 0 1.7-3L14 8.5V2"/><path d="M7.5 14h9"/>',
+  "Marketing": '<path d="M3 10v4h3l5 4V6l-5 4H3z"/><path d="M14 9a4 4 0 0 1 0 6M17 6a8 8 0 0 1 0 12"/>',
+  "Medical Records": '<path d="M3 7l2-2h6l2 2h8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>',
+  "Nursing": '<path d="M9 3v4M15 3v4M6 7h12v5a6 6 0 0 1-12 0V7z"/><path d="M12 12v6M9 21h6"/>',
+  "OPD": '<path d="M6 3v6a4 4 0 0 0 8 0V3"/><circle cx="18" cy="15" r="3"/><path d="M10 9v3a6 6 0 0 0 6 6"/>',
+  "Pharmacy": '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/>',
+  "Procurement": '<path d="M3 7h18l-1.5 12a2 2 0 0 1-2 1.7H6.5a2 2 0 0 1-2-1.7L3 7z"/><path d="M8 7V5a4 4 0 0 1 8 0v2"/>',
+  "QA": '<path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5l8-3z"/><path d="M9 12l2 2 4-4"/>',
+  "Rehab": '<path d="M4 12h2M18 12h2M6 8v8M18 8v8M6 12h12"/>',
+  "RTU": '<path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/>',
+  "Social Service": '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="M5 5l3.5 3.5M19 5l-3.5 3.5M5 19l3.5-3.5M19 19l-3.5-3.5"/>'
 };
+
+/* Assign each department a rotating accent color (dept-c0 .. dept-c9) */
+const DEPT_ICON = {};
+DEPARTMENTS.forEach((dept, i) => {
+  DEPT_ICON[dept] = {
+    cls: `dept-c${i % 10}`,
+    path: DEPT_ICON_PATHS[dept] || '<rect x="3" y="4" width="18" height="12" rx="1.5"/>'
+  };
+});
 
 const STATUS_MAP = {
   "Good": "status-good",
@@ -27,14 +51,26 @@ const STATUS_MAP = {
 
 /* Rooms/areas each department's equipment can physically be found in */
 const DEPT_LOCATIONS = {
-  "Human Resources": ["HR Office, 3rd Floor", "HR Records Room, 3rd Floor"],
+  "Accounting and Finance": ["Finance Office, 3rd Floor", "Accounting Section, 3rd Floor"],
+  "Administrative Department": ["Admin Office, 3rd Floor", "Executive Office, 3rd Floor"],
+  "Dietary": ["Dietary Kitchen, Ground Floor", "Dietary Office, Ground Floor"],
+  "GSS": ["GSS Office, Ground Floor", "Maintenance Bay, Basement"],
+  "Heart Station": ["Heart Station, 2nd Floor", "Cardiac Unit, 2nd Floor"],
+  "HR": ["HR Office, 3rd Floor", "HR Records Room, 3rd Floor"],
+  "Imaging": ["Radiology Room 1, Ground Floor", "Radiology Room 2, Ground Floor", "CT Scan Room, Ground Floor"],
+  "IMRS": ["IMRS Office, 2nd Floor", "Data Center, 2nd Floor"],
+  "IT": ["IT Office, 6th Floor", "Server Room, 6th Floor", "IT Storage, 6th Floor"],
   "Laboratory": ["Lab Room 1, Ground Floor", "Lab Room 2, Ground Floor", "Specimen Collection, Ground Floor"],
-  "Accounting": ["Accounting Office, 3rd Floor", "Billing Section, 3rd Floor"],
+  "Marketing": ["Marketing Office, 3rd Floor"],
   "Medical Records": ["Records Room A, 2nd Floor", "Records Room B, 2nd Floor"],
+  "Nursing": ["Nurses Station A, 4th Floor", "Nurses Station B, 5th Floor", "Nurses Station C, 5th Floor"],
+  "OPD": ["OPD Clinic 1, Ground Floor", "OPD Clinic 2, Ground Floor", "OPD Waiting Area, Ground Floor"],
   "Pharmacy": ["Pharmacy Counter, Ground Floor", "Pharmacy Stockroom, Ground Floor"],
-  "Nursing Station": ["Nurses Station A, 4th Floor", "Nurses Station B, 5th Floor", "Nurses Station C, 5th Floor"],
-  "Admitting": ["Admitting Desk, Ground Floor", "Triage Area, Ground Floor"],
-  "IT Department": ["IT Office, 6th Floor", "Server Room, 6th Floor", "IT Storage, 6th Floor"]
+  "Procurement": ["Procurement Office, 3rd Floor", "Supply Warehouse, Basement"],
+  "QA": ["QA Office, 3rd Floor"],
+  "Rehab": ["Rehab Gym, 2nd Floor", "Physical Therapy Room, 2nd Floor"],
+  "RTU": ["RTU Room, 4th Floor"],
+  "Social Service": ["Social Service Office, Ground Floor"]
 };
 
 function pickLocation(dept, seed) {
@@ -45,14 +81,14 @@ function pickLocation(dept, seed) {
 /* Seed dataset — mirrors the design, extended to 245 records */
 function buildSeedData() {
   const base = [
-    ["Human Resources", "PC-001 (Desktop)", "Juan Dela Cruz", "2026-08-18", "Good", "No issues found.", "HR Office, 3rd Floor"],
+    ["HR", "PC-001 (Desktop)", "Juan Dela Cruz", "2026-08-18", "Good", "No issues found.", "HR Office, 3rd Floor"],
     ["Laboratory", "Epson L5290 (Printer)", "Maria Santos", "2026-08-18", "With Issue", "ADF feeder problem.", "Lab Room 1, Ground Floor"],
-    ["Accounting", "PC-014 (Desktop)", "Mark Anthony", null, "Due", "Scheduled check", "Accounting Office, 3rd Floor"],
+    ["Accounting and Finance", "PC-014 (Desktop)", "Mark Anthony", null, "Due", "Scheduled check", "Finance Office, 3rd Floor"],
     ["Medical Records", "Epson L120 (Printer)", "Ana Reyes", "2026-08-17", "With Issue", "Not printing properly.", "Records Room A, 2nd Floor"],
     ["Pharmacy", "PC-003 (Desktop)", "Rhea Morales", "2026-08-17", "Good", "All functioning well.", "Pharmacy Counter, Ground Floor"],
-    ["Nursing Station", "PC-009 (Desktop)", "Jose P. Garcia", "2026-08-16", "For Monitoring", "Slow performance.", "Nurses Station A, 4th Floor"],
-    ["Admitting", "Canon G3010 (Printer)", "Liza Mendoza", "2026-08-16", "Good", "No issues found.", "Admitting Desk, Ground Floor"],
-    ["IT Department", "Server (Production)", "Lito Cabajar", "2026-08-15", "Good", "System normal.", "Server Room, 6th Floor"]
+    ["Nursing", "PC-009 (Desktop)", "Jose P. Garcia", "2026-08-16", "For Monitoring", "Slow performance.", "Nurses Station A, 4th Floor"],
+    ["OPD", "Canon G3010 (Printer)", "Liza Mendoza", "2026-08-16", "Good", "No issues found.", "OPD Clinic 1, Ground Floor"],
+    ["IT", "Server (Production)", "Lito Cabajar", "2026-08-15", "Good", "System normal.", "Server Room, 6th Floor"]
   ];
 
   const equipmentTypes = [
@@ -141,7 +177,10 @@ const viewModalClose = document.getElementById("viewModalClose");
 
 const addModalOverlay = document.getElementById("addModalOverlay");
 const addModalClose = document.getElementById("addModalClose");
+const addModalTitle = document.getElementById("addModalTitle");
+const addFormSubmitBtn = document.getElementById("addFormSubmitBtn");
 const addCheckingBtn = document.getElementById("addCheckingBtn");
+const exportBtn = document.getElementById("exportBtn");
 const cancelAdd = document.getElementById("cancelAdd");
 const addForm = document.getElementById("addForm");
 const fDept = document.getElementById("fDept");
@@ -256,8 +295,11 @@ function render() {
             <button class="icon-btn" data-action="view" data-id="${row.id}" aria-label="View">
               <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
-            <button class="icon-btn" data-action="more" data-id="${row.id}" aria-label="More options">
-              <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/></svg>
+            <button class="icon-btn" data-action="edit" data-id="${row.id}" aria-label="Edit">
+              <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            </button>
+            <button class="icon-btn danger" data-action="delete" data-id="${row.id}" aria-label="Delete">
+              <svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/><path d="M10 11v6M14 11v6"/></svg>
             </button>
           </div>
         </td>
@@ -429,8 +471,10 @@ tableBody.addEventListener("click", (e) => {
   const id = Number(btn.dataset.id);
   if (btn.dataset.action === "view") {
     openViewModal(id);
-  } else if (btn.dataset.action === "more") {
-    openViewModal(id); // simplified: reuse detail view for "more"
+  } else if (btn.dataset.action === "edit") {
+    openEditModal(id);
+  } else if (btn.dataset.action === "delete") {
+    deleteRow(id);
   }
 });
 
@@ -439,12 +483,46 @@ viewModalOverlay.addEventListener("click", (e) => {
   if (e.target === viewModalOverlay) viewModalOverlay.classList.remove("open");
 });
 
-/* ---------------- Add Checking modal ---------------- */
+/* ---------------- Add / Edit Checking modal ---------------- */
+let editingId = null;
+
 function openAddModal() {
+  editingId = null;
   addForm.reset();
+  addModalTitle.textContent = "Add Equipment Checking";
+  addFormSubmitBtn.textContent = "Save Checking";
   fDate.valueAsDate = new Date();
   fLocation.value = (DEPT_LOCATIONS[fDept.value] || [""])[0];
   addModalOverlay.classList.add("open");
+}
+
+function openEditModal(id) {
+  const row = DATA.find(r => r.id === id);
+  if (!row) return;
+  editingId = id;
+  addModalTitle.textContent = "Edit Equipment Checking";
+  addFormSubmitBtn.textContent = "Save Changes";
+
+  fDept.value = row.department;
+  fEquipment.value = row.equipment;
+  fLocation.value = row.location;
+  fUser.value = row.user;
+  fDate.value = row.date || "";
+  fStatus.value = row.status;
+  fNotes.value = row.notes;
+
+  addModalOverlay.classList.add("open");
+}
+
+function deleteRow(id) {
+  const row = DATA.find(r => r.id === id);
+  if (!row) return;
+  const ok = window.confirm(`Delete the checking record for "${row.equipment}"? This can't be undone.`);
+  if (!ok) return;
+  const idx = DATA.findIndex(r => r.id === id);
+  if (idx !== -1) DATA.splice(idx, 1);
+  render();
+  showToast("Equipment checking deleted.");
 }
 
 fDept.addEventListener("change", () => {
@@ -461,8 +539,8 @@ addModalOverlay.addEventListener("click", (e) => {
 
 addForm.addEventListener("submit", (e) => {
   e.preventDefault();
-  const newRow = {
-    id: DATA.length ? Math.max(...DATA.map(r => r.id)) + 1 : 1,
+
+  const values = {
     department: fDept.value,
     equipment: fEquipment.value.trim(),
     location: fLocation.value.trim() || "Location not specified",
@@ -471,12 +549,63 @@ addForm.addEventListener("submit", (e) => {
     status: fStatus.value,
     notes: fNotes.value.trim() || "No notes provided."
   };
-  DATA.unshift(newRow);
-  addModalOverlay.classList.remove("open");
-  state.page = 1;
-  render();
-  showToast("Equipment checking added successfully.");
+
+  if (editingId !== null) {
+    const row = DATA.find(r => r.id === editingId);
+    if (row) Object.assign(row, values);
+    addModalOverlay.classList.remove("open");
+    render();
+    showToast("Equipment checking updated successfully.");
+  } else {
+    const newRow = { id: DATA.length ? Math.max(...DATA.map(r => r.id)) + 1 : 1, ...values };
+    DATA.unshift(newRow);
+    addModalOverlay.classList.remove("open");
+    state.page = 1;
+    render();
+    showToast("Equipment checking added successfully.");
+  }
+
+  editingId = null;
 });
+
+/* ---------------- Export (extract) filtered records to CSV ---------------- */
+function exportFilteredToCsv() {
+  const rows = getFiltered();
+  if (!rows.length) {
+    showToast("No records match the current filters.");
+    return;
+  }
+
+  const headers = ["Department", "Equipment", "Location", "User", "Date Checked", "Status", "Notes"];
+  const csvEscape = (val) => {
+    const s = String(val ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  const lines = [headers.join(",")];
+  rows.forEach(r => {
+    lines.push([
+      r.department, r.equipment, r.location, r.user,
+      r.date ? formatDate(r.date) : "\u2013", r.status, r.notes
+    ].map(csvEscape).join(","));
+  });
+
+  const csvContent = lines.join("\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `equipment-checking-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+
+  showToast(`Exported ${rows.length} record${rows.length === 1 ? "" : "s"} to CSV.`);
+}
+
+exportBtn.addEventListener("click", exportFilteredToCsv);
 
 /* ---------------- Toast ---------------- */
 let toastTimer;

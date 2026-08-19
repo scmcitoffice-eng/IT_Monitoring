@@ -208,6 +208,11 @@
             </div>
           </div>
 
+          <button class="btn-secondary" id="exportBtn" type="button">
+            <svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
+            Export
+          </button>
+
           <button class="btn-primary" id="addCheckingBtn">
             <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
             Add Checking
@@ -474,7 +479,7 @@
 <div class="modal-overlay" id="addModalOverlay">
   <div class="modal">
     <div class="modal-header">
-      <h3>Add Equipment Checking</h3>
+      <h3 id="addModalTitle">Add Equipment Checking</h3>
       <button class="modal-close" id="addModalClose">
         <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
@@ -508,7 +513,7 @@
       </label>
       <div class="form-actions">
         <button type="button" class="btn-secondary" id="cancelAdd">Cancel</button>
-        <button type="submit" class="btn-primary">Save Checking</button>
+        <button type="submit" class="btn-primary" id="addFormSubmitBtn">Save Checking</button>
       </div>
     </form>
   </div>
