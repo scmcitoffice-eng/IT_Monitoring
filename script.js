@@ -230,6 +230,7 @@ const addModalTitle = document.getElementById("addModalTitle");
 const addFormSubmitBtn = document.getElementById("addFormSubmitBtn");
 const addCheckingBtn = document.getElementById("addCheckingBtn");
 const exportBtn = document.getElementById("exportBtn");
+const deleteAllBtn = document.getElementById("deleteAllBtn");
 const cancelAdd = document.getElementById("cancelAdd");
 const addForm = document.getElementById("addForm");
 const fDept = document.getElementById("fDept");
@@ -662,6 +663,47 @@ function exportFilteredToCsv() {
 }
 
 exportBtn.addEventListener("click", exportFilteredToCsv);
+
+/* ---------------- Delete All (filtered) ---------------- */
+async function deleteAllFiltered() {
+  const rows = getFiltered();
+
+  if (!rows.length) {
+    showToast("No records match the current filters.");
+    return;
+  }
+
+  const isUnfiltered = state.search === "" && state.department === "All" &&
+    state.status === "All" && state.date === "All" && state.location === "All";
+
+  const warning = isUnfiltered
+    ? `Delete ALL ${rows.length} equipment checking records? This cannot be undone.`
+    : `Delete ${rows.length} record${rows.length === 1 ? "" : "s"} matching the current filters? This cannot be undone.`;
+
+  const ok = window.confirm(warning);
+  if (!ok) return;
+
+  deleteAllBtn.disabled = true;
+  try {
+    const batchSize = 400;
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const batch = writeBatch(db);
+      rows.slice(i, i + batchSize).forEach(row => {
+        batch.delete(doc(db, CHECKS_COLLECTION, row.id));
+      });
+      await batch.commit();
+    }
+    state.page = 1;
+    showToast(`Deleted ${rows.length} record${rows.length === 1 ? "" : "s"}.`);
+  } catch (err) {
+    console.error("Delete all failed:", err);
+    showToast("Couldn't delete these records. Check your connection.");
+  } finally {
+    deleteAllBtn.disabled = false;
+  }
+}
+
+deleteAllBtn.addEventListener("click", deleteAllFiltered);
 
 /* ---------------- Toast ---------------- */
 let toastTimer;
