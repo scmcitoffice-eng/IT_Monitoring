@@ -1,6 +1,52 @@
 /* =========================================================
    Scheduled IT Equipment Checking — Dashboard Logic
+
+   Backed by Cloud Firestore (project: it-monitoring-368ef).
+   Setup required in the Firebase console before this works:
+     1. Build > Firestore Database > Create database (Native mode).
+     2. Rules tab — for quick testing only, allow open access:
+          rules_version = '2';
+          service cloud.firestore {
+            match /databases/{database}/documents {
+              match /{document=**} { allow read, write: if true; }
+            }
+          }
+        Lock this down (e.g. require auth) before going live.
+     3. Serve this folder over http(s) — ES modules + Firebase
+        won't load from a plain file:// double-click. Easiest:
+          npx serve .
+        or deploy the folder with Firebase Hosting.
+   On first load with an empty collection, the app seeds ~245
+   sample records automatically (one-time).
    ========================================================= */
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import { getAnalytics, isSupported as isAnalyticsSupported } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-analytics.js";
+import {
+  getFirestore, collection, doc, addDoc, updateDoc, deleteDoc,
+  onSnapshot, getDocs, writeBatch, query, orderBy, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyA_IWWkjY4Ae-l2yY3mfGsMPc7D0PXd6wI",
+  authDomain: "it-monitoring-368ef.firebaseapp.com",
+  projectId: "it-monitoring-368ef",
+  storageBucket: "it-monitoring-368ef.firebasestorage.app",
+  messagingSenderId: "269124711420",
+  appId: "1:269124711420:web:aaba7ab366e969f0593879",
+  measurementId: "G-D7LXVSLBQD"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+
+// Analytics only works over https with an allowed origin — skip quietly if unsupported.
+isAnalyticsSupported()
+  .then((supported) => { if (supported) getAnalytics(firebaseApp); })
+  .catch(() => {});
+
+const CHECKS_COLLECTION = "equipmentChecks";
+const checksRef = collection(db, CHECKS_COLLECTION);
 
 const DEPARTMENTS = [
   "Accounting and Finance", "Administrative Department", "Dietary", "GSS",
@@ -141,10 +187,13 @@ function buildSeedData() {
   return rows;
 }
 
-const DATA = buildSeedData();
+const DATA = [];
 
 
 /* ---------------- State ---------------- */
+let currentPage = "checking";
+let dataLoaded = false;
+
 const state = {
   search: "",
   department: "All",
@@ -214,7 +263,7 @@ function initFilters() {
     statusFilter.appendChild(opt);
   });
 
-  const allLocations = Array.from(new Set(DATA.map(r => r.location))).sort();
+  const allLocations = Array.from(new Set(Object.values(DEPT_LOCATIONS).flat())).sort();
   allLocations.forEach(loc => {
     const opt = document.createElement("option");
     opt.value = loc;
@@ -268,7 +317,7 @@ function render() {
   if (pageRows.length === 0) {
     const tr = document.createElement("tr");
     tr.className = "empty-row";
-    tr.innerHTML = `<td colspan="8">No equipment records match your filters.</td>`;
+    tr.innerHTML = `<td colspan="8">${dataLoaded ? "No equipment records match your filters." : "Loading equipment data\u2026"}</td>`;
     tableBody.appendChild(tr);
   } else {
     pageRows.forEach(row => {
@@ -389,7 +438,7 @@ function renderStats() {
 
   statTotal.textContent = total;
   statChecked.textContent = checkedCount;
-  statCheckedPct.textContent = `${((checkedCount / total) * 100).toFixed(2)}% of total`;
+  statCheckedPct.textContent = total ? `${((checkedCount / total) * 100).toFixed(2)}% of total` : "0.00% of total";
   statPending.textContent = pending;
   statIssues.textContent = issues;
 }
@@ -468,7 +517,7 @@ function openViewModal(id) {
 tableBody.addEventListener("click", (e) => {
   const btn = e.target.closest(".icon-btn");
   if (!btn) return;
-  const id = Number(btn.dataset.id);
+  const id = btn.dataset.id;
   if (btn.dataset.action === "view") {
     openViewModal(id);
   } else if (btn.dataset.action === "edit") {
@@ -514,15 +563,18 @@ function openEditModal(id) {
   addModalOverlay.classList.add("open");
 }
 
-function deleteRow(id) {
+async function deleteRow(id) {
   const row = DATA.find(r => r.id === id);
   if (!row) return;
   const ok = window.confirm(`Delete the checking record for "${row.equipment}"? This can't be undone.`);
   if (!ok) return;
-  const idx = DATA.findIndex(r => r.id === id);
-  if (idx !== -1) DATA.splice(idx, 1);
-  render();
-  showToast("Equipment checking deleted.");
+  try {
+    await deleteDoc(doc(db, CHECKS_COLLECTION, id));
+    showToast("Equipment checking deleted.");
+  } catch (err) {
+    console.error("Delete failed:", err);
+    showToast("Couldn't delete this record. Check your connection.");
+  }
 }
 
 fDept.addEventListener("change", () => {
@@ -537,7 +589,7 @@ addModalOverlay.addEventListener("click", (e) => {
   if (e.target === addModalOverlay) addModalOverlay.classList.remove("open");
 });
 
-addForm.addEventListener("submit", (e) => {
+addForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
   const values = {
@@ -550,22 +602,26 @@ addForm.addEventListener("submit", (e) => {
     notes: fNotes.value.trim() || "No notes provided."
   };
 
-  if (editingId !== null) {
-    const row = DATA.find(r => r.id === editingId);
-    if (row) Object.assign(row, values);
-    addModalOverlay.classList.remove("open");
-    render();
-    showToast("Equipment checking updated successfully.");
-  } else {
-    const newRow = { id: DATA.length ? Math.max(...DATA.map(r => r.id)) + 1 : 1, ...values };
-    DATA.unshift(newRow);
-    addModalOverlay.classList.remove("open");
-    state.page = 1;
-    render();
-    showToast("Equipment checking added successfully.");
-  }
+  addFormSubmitBtn.disabled = true;
 
-  editingId = null;
+  try {
+    if (editingId !== null) {
+      await updateDoc(doc(db, CHECKS_COLLECTION, editingId), values);
+      addModalOverlay.classList.remove("open");
+      showToast("Equipment checking updated successfully.");
+    } else {
+      await addDoc(checksRef, { ...values, createdAt: serverTimestamp() });
+      addModalOverlay.classList.remove("open");
+      state.page = 1;
+      showToast("Equipment checking added successfully.");
+    }
+  } catch (err) {
+    console.error("Save failed:", err);
+    showToast("Couldn't save this record. Check your connection.");
+  } finally {
+    addFormSubmitBtn.disabled = false;
+    editingId = null;
+  }
 });
 
 /* ---------------- Export (extract) filtered records to CSV ---------------- */
@@ -881,8 +937,14 @@ const PAGE_RENDERERS = {
 
 const pageTitleEl = document.getElementById("pageTitle");
 
+function rerenderCurrentPage() {
+  const renderer = PAGE_RENDERERS[currentPage];
+  if (renderer) renderer();
+}
+
 function switchPage(page) {
   if (!PAGE_TITLES[page]) return;
+  currentPage = page;
 
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   const target = document.getElementById("page-" + page);
@@ -962,6 +1024,55 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+/* ---------------- Firestore realtime sync ---------------- */
+let seedAttempted = false;
+
+async function seedIfEmpty() {
+  if (seedAttempted) return;
+  seedAttempted = true;
+  try {
+    const snap = await getDocs(query(checksRef));
+    if (!snap.empty) return;
+
+    const seedRows = buildSeedData();
+    const batchSize = 400;
+    for (let i = 0; i < seedRows.length; i += batchSize) {
+      const batch = writeBatch(db);
+      seedRows.slice(i, i + batchSize).forEach(row => {
+        const { id, ...payload } = row;
+        batch.set(doc(checksRef), { ...payload, createdAt: serverTimestamp() });
+      });
+      await batch.commit();
+    }
+  } catch (err) {
+    console.error("Firestore seeding failed:", err);
+    showToast("Could not load starting data into Firestore.");
+  }
+}
+
+function startRealtimeSync() {
+  onSnapshot(
+    query(checksRef, orderBy("createdAt", "desc")),
+    (snapshot) => {
+      DATA.length = 0;
+      snapshot.forEach(docSnap => DATA.push({ id: docSnap.id, ...docSnap.data() }));
+
+      if (!dataLoaded) {
+        dataLoaded = true;
+        switchPage("checking");
+      } else {
+        rerenderCurrentPage();
+      }
+
+      if (snapshot.empty) seedIfEmpty();
+    },
+    (err) => {
+      console.error("Firestore sync error:", err);
+      showToast("Couldn't connect to Firestore — check your config and rules.");
+    }
+  );
+}
+
 /* ---------------- Init ---------------- */
 initFilters();
-switchPage("checking");
+startRealtimeSync();
