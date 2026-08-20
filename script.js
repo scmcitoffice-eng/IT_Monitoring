@@ -261,8 +261,8 @@ function render() {
             <button class="icon-btn" data-action="view" data-id="${row.id}" aria-label="View">
               <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
-            <button class="icon-btn" data-action="more" data-id="${row.id}" aria-label="More options">
-              <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/></svg>
+            <button class="icon-btn icon-btn-danger" data-action="delete" data-id="${row.id}" aria-label="Delete">
+              <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13M10 11v6M14 11v6"/></svg>
             </button>
           </div>
         </td>
@@ -413,9 +413,12 @@ dateFilter.addEventListener("click", () => {
 });
 
 /* ---------------- View modal ---------------- */
+let currentViewId = null;
+
 function openViewModal(id) {
   const row = DATA.find(r => r.id === id);
   if (!row) return;
+  currentViewId = id;
   viewModalBody.innerHTML = `
     <div class="detail-row"><span>Department</span><span>${escapeHtml(row.department)}</span></div>
     <div class="detail-row"><span>Equipment</span><span>${escapeHtml(row.equipment)}</span></div>
@@ -428,21 +431,56 @@ function openViewModal(id) {
   viewModalOverlay.classList.add("open");
 }
 
+function deleteRecord(id) {
+  return equipmentRef.child(id).remove();
+}
+
 tableBody.addEventListener("click", (e) => {
   const btn = e.target.closest(".icon-btn");
   if (!btn) return;
   const id = btn.dataset.id;
   if (btn.dataset.action === "view") {
     openViewModal(id);
-  } else if (btn.dataset.action === "more") {
-    openViewModal(id); // simplified: reuse detail view for "more"
+  } else if (btn.dataset.action === "delete") {
+    const row = DATA.find(r => r.id === id);
+    const label = row ? `${row.equipment} (${row.department})` : "this record";
+    if (!confirm(`Delete ${label}? This can't be undone.`)) return;
+    btn.disabled = true;
+    deleteRecord(id)
+      .then(() => showToast("Equipment checking deleted."))
+      .catch((err) => {
+        console.error("Delete failed:", err);
+        showToast("Couldn't delete — check your connection and try again.");
+        btn.disabled = false;
+      });
   }
 });
 
 viewModalClose.addEventListener("click", () => viewModalOverlay.classList.remove("open"));
+document.getElementById("viewModalCloseBtn").addEventListener("click", () => viewModalOverlay.classList.remove("open"));
 viewModalOverlay.addEventListener("click", (e) => {
   if (e.target === viewModalOverlay) viewModalOverlay.classList.remove("open");
 });
+
+document.getElementById("viewModalDelete").addEventListener("click", (e) => {
+  if (!currentViewId) return;
+  const row = DATA.find(r => r.id === currentViewId);
+  const label = row ? `${row.equipment} (${row.department})` : "this record";
+  if (!confirm(`Delete ${label}? This can't be undone.`)) return;
+  const delBtn = e.currentTarget;
+  delBtn.disabled = true;
+  deleteRecord(currentViewId)
+    .then(() => {
+      viewModalOverlay.classList.remove("open");
+      showToast("Equipment checking deleted.");
+    })
+    .catch((err) => {
+      console.error("Delete failed:", err);
+      showToast("Couldn't delete — check your connection and try again.");
+    })
+    .finally(() => { delBtn.disabled = false; });
+});
+
 
 /* ---------------- Add Checking modal ---------------- */
 function openAddModal() {
