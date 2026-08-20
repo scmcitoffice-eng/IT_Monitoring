@@ -105,8 +105,13 @@ function buildSeedData() {
   return rows;
 }
 
-const DATA = buildSeedData();
-
+/* DATA now comes from Firebase Realtime Database (see firebase-config.js
+   for the `equipmentRef` handle). It starts empty and is populated by the
+   `equipmentRef.on("value", ...)` listener near the bottom of this file,
+   which also keeps it live-synced and re-renders the current page on
+   every change (add/edit/delete from any device). */
+let DATA = [];
+let dataLoaded = false;
 
 /* ---------------- State ---------------- */
 const state = {
@@ -175,7 +180,7 @@ function initFilters() {
     statusFilter.appendChild(opt);
   });
 
-  const allLocations = Array.from(new Set(DATA.map(r => r.location))).sort();
+  const allLocations = Array.from(new Set(Object.values(DEPT_LOCATIONS).flat())).sort();
   allLocations.forEach(loc => {
     const opt = document.createElement("option");
     opt.value = loc;
@@ -426,7 +431,7 @@ function openViewModal(id) {
 tableBody.addEventListener("click", (e) => {
   const btn = e.target.closest(".icon-btn");
   if (!btn) return;
-  const id = Number(btn.dataset.id);
+  const id = btn.dataset.id;
   if (btn.dataset.action === "view") {
     openViewModal(id);
   } else if (btn.dataset.action === "more") {
@@ -462,20 +467,34 @@ addModalOverlay.addEventListener("click", (e) => {
 addForm.addEventListener("submit", (e) => {
   e.preventDefault();
   const newRow = {
-    id: DATA.length ? Math.max(...DATA.map(r => r.id)) + 1 : 1,
     department: fDept.value,
     equipment: fEquipment.value.trim(),
     location: fLocation.value.trim() || "Location not specified",
     user: fUser.value.trim(),
     date: fDate.value || null,
     status: fStatus.value,
-    notes: fNotes.value.trim() || "No notes provided."
+    notes: fNotes.value.trim() || "No notes provided.",
+    createdAt: firebase.database.ServerValue.TIMESTAMP
   };
-  DATA.unshift(newRow);
-  addModalOverlay.classList.remove("open");
-  state.page = 1;
-  render();
-  showToast("Equipment checking added successfully.");
+
+  const submitBtn = addForm.querySelector(".btn-primary");
+  if (submitBtn) submitBtn.disabled = true;
+
+  equipmentRef.push(newRow)
+    .then(() => {
+      addModalOverlay.classList.remove("open");
+      state.page = 1;
+      showToast("Equipment checking added successfully.");
+      // The live listener below re-renders automatically once Firebase
+      // confirms the write, so no manual render() call is needed here.
+    })
+    .catch((err) => {
+      console.error("Failed to save to Firebase:", err);
+      showToast("Couldn't save — check your connection and try again.");
+    })
+    .finally(() => {
+      if (submitBtn) submitBtn.disabled = false;
+    });
 });
 
 /* ---------------- Toast ---------------- */
@@ -835,4 +854,45 @@ document.addEventListener("keydown", (e) => {
 
 /* ---------------- Init ---------------- */
 initFilters();
-switchPage("checking");
+tableBody.innerHTML = '<tr class="empty-row"><td colspan="8">Loading equipment records…</td></tr>';
+
+/* ---------------- Firebase live sync ----------------
+   Loads equipment-checking records from Realtime Database and keeps
+   them live-synced. On a brand-new database (no data yet) it seeds
+   the DB once from the built-in sample dataset so the app isn't empty
+   on first run — after that, Firebase is the single source of truth. */
+equipmentRef.on("value", (snapshot) => {
+  if (!snapshot.exists()) {
+    if (!dataLoaded) {
+      // Nothing in the DB yet — seed it once from the sample dataset.
+      const seed = {};
+      buildSeedData().forEach((row) => {
+        const { id, ...rest } = row;
+        seed[equipmentRef.push().key] = rest;
+      });
+      equipmentRef.set(seed).catch((err) => console.error("Seed failed:", err));
+    }
+    return; // the .set() above will re-trigger this listener with data
+  }
+
+  const val = snapshot.val();
+  DATA = Object.keys(val).map((key) => ({ id: key, ...val[key] }));
+
+  if (!dataLoaded) {
+    dataLoaded = true;
+    switchPage("checking");
+  } else {
+    refreshCurrentPage();
+  }
+}, (err) => {
+  console.error("Firebase read failed:", err);
+  showToast("Couldn't connect to the database.");
+});
+
+function refreshCurrentPage() {
+  const activeSection = document.querySelector(".page.active");
+  if (!activeSection) return;
+  const page = activeSection.id.replace("page-", "");
+  const renderer = PAGE_RENDERERS[page];
+  if (renderer) renderer();
+}
