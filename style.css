@@ -838,6 +838,9 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
 .btn-primary:hover { background: var(--blue-700); }
 
 .btn-secondary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   background: #fff;
   color: var(--ink-700);
   border: 1px solid var(--line);
@@ -847,9 +850,12 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
   font-weight: 700;
   cursor: pointer;
   font-family: inherit;
+  white-space: nowrap;
 }
 
+.btn-secondary svg { width: 16px; height: 16px; }
 .btn-secondary:hover { background: #f5f7fa; }
+.btn-secondary:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .btn-danger {
   display: flex;
@@ -864,11 +870,12 @@ svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width:
   font-weight: 700;
   cursor: pointer;
   font-family: inherit;
-  margin-right: auto;
+  white-space: nowrap;
 }
 .btn-danger svg { width: 16px; height: 16px; }
 .btn-danger:hover { background: #fef2f2; }
 .btn-danger:disabled { opacity: 0.6; cursor: not-allowed; }
+.form-actions .btn-danger { margin-right: auto; }
 
 
 /* ---------------- Table ---------------- */

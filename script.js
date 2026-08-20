@@ -147,6 +147,8 @@ const viewModalClose = document.getElementById("viewModalClose");
 const addModalOverlay = document.getElementById("addModalOverlay");
 const addModalClose = document.getElementById("addModalClose");
 const addCheckingBtn = document.getElementById("addCheckingBtn");
+const exportBtn = document.getElementById("exportBtn");
+const deleteFilteredBtn = document.getElementById("deleteFilteredBtn");
 const cancelAdd = document.getElementById("cancelAdd");
 const addForm = document.getElementById("addForm");
 const fDept = document.getElementById("fDept");
@@ -543,6 +545,76 @@ function showToast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.remove("show"), 2400);
 }
+
+/* ---------------- Export filtered (CSV) ---------------- */
+function csvEscape(val) {
+  const s = String(val ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function exportFilteredCsv() {
+  const rows = getFiltered();
+  if (!rows.length) {
+    showToast("No records match the current filters.");
+    return;
+  }
+
+  const headers = ["Department", "Equipment", "Location", "User", "Date Checked", "Status", "Notes"];
+  const lines = [headers.join(",")];
+  rows.forEach(r => {
+    lines.push([
+      r.department, r.equipment, r.location, r.user,
+      r.date ? formatDate(r.date) : "",
+      r.status, r.notes
+    ].map(csvEscape).join(","));
+  });
+
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `equipment-checking_${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+
+  showToast(`Exported ${rows.length} record${rows.length === 1 ? "" : "s"}.`);
+}
+
+exportBtn.addEventListener("click", exportFilteredCsv);
+
+/* ---------------- Delete all filtered ---------------- */
+function deleteFilteredRecords() {
+  const rows = getFiltered();
+  if (!rows.length) {
+    showToast("No records match the current filters.");
+    return;
+  }
+
+  const confirmMsg = `Delete ${rows.length} record${rows.length === 1 ? "" : "s"} matching the current filters? This can't be undone.`;
+  if (!confirm(confirmMsg)) return;
+
+  deleteFilteredBtn.disabled = true;
+  const updates = {};
+  rows.forEach(r => { updates[r.id] = null; });
+
+  equipmentRef.update(updates)
+    .then(() => {
+      state.page = 1;
+      showToast(`Deleted ${rows.length} record${rows.length === 1 ? "" : "s"}.`);
+    })
+    .catch((err) => {
+      console.error("Bulk delete failed:", err);
+      showToast("Couldn't delete — check your connection and try again.");
+    })
+    .finally(() => {
+      deleteFilteredBtn.disabled = false;
+    });
+}
+
+deleteFilteredBtn.addEventListener("click", deleteFilteredRecords);
 
 /* =========================================================
    Navigation — page switching & content for every nav item
