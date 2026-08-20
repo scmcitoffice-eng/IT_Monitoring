@@ -16,16 +16,15 @@
         won't load from a plain file:// double-click. Easiest:
           npx serve .
         or deploy the folder with Firebase Hosting.
-   On first-ever load, the app seeds ~245 sample records once and
-   marks a meta doc (appMeta/seedStatus) so deleting records later
-   — including "Delete All" — never triggers a re-seed.
+   No sample data is auto-seeded — the collection starts empty
+   and only ever contains what's added through the app.
    ========================================================= */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import { getAnalytics, isSupported as isAnalyticsSupported } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-analytics.js";
 import {
   getFirestore, collection, doc, addDoc, updateDoc, deleteDoc,
-  onSnapshot, getDocs, getDoc, setDoc, writeBatch, query, orderBy, serverTimestamp
+  onSnapshot, writeBatch, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -49,10 +48,6 @@ isAnalyticsSupported()
 
 const CHECKS_COLLECTION = "equipmentChecks";
 const checksRef = collection(db, CHECKS_COLLECTION);
-
-// Marks whether the sample dataset has ever been seeded, so intentional
-// deletions (e.g. "Delete All") never get auto-refilled on next load.
-const seedStatusRef = doc(db, "appMeta", "seedStatus");
 
 const DEPARTMENTS = [
   "Accounting and Finance", "Administrative Department", "Dietary", "GSS",
@@ -124,74 +119,6 @@ const DEPT_LOCATIONS = {
   "RTU": ["RTU Room, 4th Floor"],
   "Social Service": ["Social Service Office, Ground Floor"]
 };
-
-function pickLocation(dept, seed) {
-  const options = DEPT_LOCATIONS[dept] || ["Main Building, Ground Floor"];
-  return options[seed % options.length];
-}
-
-/* Seed dataset — mirrors the design, extended to 245 records */
-function buildSeedData() {
-  const base = [
-    ["HR", "PC-001 (Desktop)", "Juan Dela Cruz", "2026-08-18", "Good", "No issues found.", "HR Office, 3rd Floor"],
-    ["Laboratory", "Epson L5290 (Printer)", "Maria Santos", "2026-08-18", "With Issue", "ADF feeder problem.", "Lab Room 1, Ground Floor"],
-    ["Accounting and Finance", "PC-014 (Desktop)", "Mark Anthony", null, "Due", "Scheduled check", "Finance Office, 3rd Floor"],
-    ["Medical Records", "Epson L120 (Printer)", "Ana Reyes", "2026-08-17", "With Issue", "Not printing properly.", "Records Room A, 2nd Floor"],
-    ["Pharmacy", "PC-003 (Desktop)", "Rhea Morales", "2026-08-17", "Good", "All functioning well.", "Pharmacy Counter, Ground Floor"],
-    ["Nursing", "PC-009 (Desktop)", "Jose P. Garcia", "2026-08-16", "For Monitoring", "Slow performance.", "Nurses Station A, 4th Floor"],
-    ["OPD", "Canon G3010 (Printer)", "Liza Mendoza", "2026-08-16", "Good", "No issues found.", "OPD Clinic 1, Ground Floor"],
-    ["IT", "Server (Production)", "Lito Cabajar", "2026-08-15", "Good", "System normal.", "Server Room, 6th Floor"]
-  ];
-
-  const equipmentTypes = [
-    "PC (Desktop)", "PC (Laptop)", "Epson L5290 (Printer)", "Canon G3010 (Printer)",
-    "HP LaserJet (Printer)", "Router (Network)", "Switch (Network)", "UPS Unit",
-    "Server (Production)", "Server (Backup)", "Monitor 24in", "Barcode Scanner"
-  ];
-  const users = [
-    "Juan Dela Cruz", "Maria Santos", "Mark Anthony", "Ana Reyes", "Rhea Morales",
-    "Jose P. Garcia", "Liza Mendoza", "Lito Cabajar", "Carmela Sy", "Ramon Torres",
-    "Bea Villanueva", "Noel Ramos", "Grace Uy", "Ferdie Santos", "Ivy Domingo"
-  ];
-  const statuses = ["Good", "Good", "Good", "With Issue", "For Monitoring", "Due"];
-  const notesByStatus = {
-    "Good": ["All functioning well.", "No issues found.", "System normal.", "Passed inspection."],
-    "With Issue": ["ADF feeder problem.", "Not printing properly.", "Random shutdowns.", "Network drops intermittently."],
-    "For Monitoring": ["Slow performance.", "Fan noise, watching closely.", "Minor lag reported."],
-    "Due": ["Scheduled check", "Awaiting technician", "Queued for inspection"]
-  };
-
-  const rows = base.map((r, i) => ({ id: i + 1, department: r[0], equipment: r[1], user: r[2], date: r[3], status: r[4], notes: r[5], location: r[6] }));
-
-  let id = rows.length + 1;
-  const totalTarget = 245;
-  while (rows.length < totalTarget) {
-    const dept = DEPARTMENTS[id % DEPARTMENTS.length];
-    const equip = equipmentTypes[id % equipmentTypes.length];
-    const num = String(id).padStart(3, "0");
-    const user = users[id % users.length];
-    const status = statuses[id % statuses.length];
-    const hasDate = status !== "Due";
-    const day = 1 + (id % 28);
-    const month = 1 + (id % 8);
-    const date = hasDate ? `2026-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}` : null;
-    const notesArr = notesByStatus[status];
-    const notes = notesArr[id % notesArr.length];
-    const location = pickLocation(dept, id);
-    rows.push({
-      id,
-      department: dept,
-      equipment: `${equip.split(" (")[0]}-${num} (${equip.split(" (")[1] ?? "Desktop)"}`,
-      user,
-      date,
-      status,
-      notes,
-      location
-    });
-    id++;
-  }
-  return rows;
-}
 
 const DATA = [];
 
@@ -1079,39 +1006,6 @@ document.addEventListener("keydown", (e) => {
 });
 
 /* ---------------- Firestore realtime sync ---------------- */
-let seedAttempted = false;
-
-async function seedIfNeeded() {
-  if (seedAttempted) return;
-  seedAttempted = true;
-  try {
-    const metaSnap = await getDoc(seedStatusRef);
-    if (metaSnap.exists() && metaSnap.data().seeded) return; // already seeded before — never reseed, even if now empty
-
-    const existing = await getDocs(query(checksRef));
-    if (!existing.empty) {
-      // Data already present from before this guard existed — just record it, don't duplicate.
-      await setDoc(seedStatusRef, { seeded: true, seededAt: serverTimestamp() });
-      return;
-    }
-
-    const seedRows = buildSeedData();
-    const batchSize = 400;
-    for (let i = 0; i < seedRows.length; i += batchSize) {
-      const batch = writeBatch(db);
-      seedRows.slice(i, i + batchSize).forEach(row => {
-        const { id, ...payload } = row;
-        batch.set(doc(checksRef), { ...payload, createdAt: serverTimestamp() });
-      });
-      await batch.commit();
-    }
-    await setDoc(seedStatusRef, { seeded: true, seededAt: serverTimestamp() });
-  } catch (err) {
-    console.error("Firestore seeding failed:", err);
-    showToast("Could not load starting data into Firestore.");
-  }
-}
-
 function startRealtimeSync() {
   onSnapshot(
     query(checksRef, orderBy("createdAt", "desc")),
@@ -1123,7 +1017,6 @@ function startRealtimeSync() {
       if (!dataLoaded) {
         dataLoaded = true;
         switchPage("checking");
-        seedIfNeeded();
       } else {
         rerenderCurrentPage();
       }
