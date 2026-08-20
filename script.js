@@ -1,93 +1,22 @@
 /* =========================================================
    Scheduled IT Equipment Checking — Dashboard Logic
-
-   Backed by Cloud Firestore (project: it-monitoring-368ef).
-   Setup required in the Firebase console before this works:
-     1. Build > Firestore Database > Create database (Native mode).
-     2. Rules tab — for quick testing only, allow open access:
-          rules_version = '2';
-          service cloud.firestore {
-            match /databases/{database}/documents {
-              match /{document=**} { allow read, write: if true; }
-            }
-          }
-        Lock this down (e.g. require auth) before going live.
-     3. Serve this folder over http(s) — ES modules + Firebase
-        won't load from a plain file:// double-click. Easiest:
-          npx serve .
-        or deploy the folder with Firebase Hosting.
-   No sample data is auto-seeded — the collection starts empty
-   and only ever contains what's added through the app.
    ========================================================= */
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { getAnalytics, isSupported as isAnalyticsSupported } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-analytics.js";
-import {
-  getFirestore, collection, doc, addDoc, updateDoc, deleteDoc,
-  onSnapshot, writeBatch, query, orderBy, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyA_IWWkjY4Ae-l2yY3mfGsMPc7D0PXd6wI",
-  authDomain: "it-monitoring-368ef.firebaseapp.com",
-  databaseURL: "https://it-monitoring-368ef-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "it-monitoring-368ef",
-  storageBucket: "it-monitoring-368ef.firebasestorage.app",
-  messagingSenderId: "269124711420",
-  appId: "1:269124711420:web:aaba7ab366e969f0593879",
-  measurementId: "G-D7LXVSLBQD"
-};
-
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
-
-// Analytics only works over https with an allowed origin — skip quietly if unsupported.
-isAnalyticsSupported()
-  .then((supported) => { if (supported) getAnalytics(firebaseApp); })
-  .catch(() => {});
-
-const CHECKS_COLLECTION = "equipmentChecks";
-const checksRef = collection(db, CHECKS_COLLECTION);
-
 const DEPARTMENTS = [
-  "Accounting and Finance", "Administrative Department", "Dietary", "GSS",
-  "Heart Station", "HR", "Imaging", "IMRS", "IT", "Laboratory",
-  "Marketing", "Medical Records", "Nursing", "OPD", "Pharmacy",
-  "Procurement", "QA", "Rehab", "RTU", "Social Service"
+  "Human Resources", "Laboratory", "Accounting", "Medical Records",
+  "Pharmacy", "Nursing Station", "Admitting", "IT Department"
 ];
 
-/* Line-art icon paths per department (24x24 viewBox) */
-const DEPT_ICON_PATHS = {
-  "Accounting and Finance": '<rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M8 7h8M8 11h3M8 15h3M14 11h2M14 15h2"/>',
-  "Administrative Department": '<rect x="3" y="7" width="18" height="12" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18"/>',
-  "Dietary": '<path d="M7 2v7a2 2 0 0 1-4 0V2M5 9v13M14 2c-1.7 0-3 2-3 4.5S12.3 11 14 11m0-9v20"/>',
-  "GSS": '<path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5l8-3z"/>',
-  "Heart Station": '<path d="M12 21s-7-4.5-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2.5 4.5-9.5 9-9.5 9z"/><path d="M6 12h3l1.5-3L12 15l1.5-3H18"/>',
-  "HR": '<circle cx="9" cy="8" r="3"/><path d="M2.5 20c0-3.4 2.9-6 6.5-6s6.5 2.6 6.5 6"/><path d="M16 4.7c1.5.4 2.6 1.8 2.6 3.4 0 1.6-1.1 3-2.6 3.4M21.5 20c0-2.8-1.9-5-4.5-5.7"/>',
-  "Imaging": '<rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="4"/><path d="M9 6l1.5-2h3L15 6"/>',
-  "IMRS": '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
-  "IT": '<rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8M12 17v4"/>',
-  "Laboratory": '<path d="M9 2h6M10 2v6.5L4.5 18a2 2 0 0 0 1.7 3h11.6a2 2 0 0 0 1.7-3L14 8.5V2"/><path d="M7.5 14h9"/>',
-  "Marketing": '<path d="M3 10v4h3l5 4V6l-5 4H3z"/><path d="M14 9a4 4 0 0 1 0 6M17 6a8 8 0 0 1 0 12"/>',
-  "Medical Records": '<path d="M3 7l2-2h6l2 2h8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>',
-  "Nursing": '<path d="M9 3v4M15 3v4M6 7h12v5a6 6 0 0 1-12 0V7z"/><path d="M12 12v6M9 21h6"/>',
-  "OPD": '<path d="M6 3v6a4 4 0 0 0 8 0V3"/><circle cx="18" cy="15" r="3"/><path d="M10 9v3a6 6 0 0 0 6 6"/>',
-  "Pharmacy": '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/>',
-  "Procurement": '<path d="M3 7h18l-1.5 12a2 2 0 0 1-2 1.7H6.5a2 2 0 0 1-2-1.7L3 7z"/><path d="M8 7V5a4 4 0 0 1 8 0v2"/>',
-  "QA": '<path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5l8-3z"/><path d="M9 12l2 2 4-4"/>',
-  "Rehab": '<path d="M4 12h2M18 12h2M6 8v8M18 8v8M6 12h12"/>',
-  "RTU": '<path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/>',
-  "Social Service": '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="M5 5l3.5 3.5M19 5l-3.5 3.5M5 19l3.5-3.5M19 19l-3.5-3.5"/>'
+const DEPT_ICON = {
+  "Human Resources": { cls: "dept-hr", path: '<circle cx="9" cy="8" r="3"/><path d="M2.5 20c0-3.4 2.9-6 6.5-6s6.5 2.6 6.5 6"/><path d="M16 4.7c1.5.4 2.6 1.8 2.6 3.4 0 1.6-1.1 3-2.6 3.4M21.5 20c0-2.8-1.9-5-4.5-5.7"/>' },
+  "Laboratory": { cls: "dept-lab", path: '<path d="M9 2h6M10 2v6.5L4.5 18a2 2 0 0 0 1.7 3h11.6a2 2 0 0 0 1.7-3L14 8.5V2"/><path d="M7.5 14h9"/>' },
+  "Accounting": { cls: "dept-acct", path: '<rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M8 7h8M8 11h3M8 15h3M14 11h2M14 15h2"/>' },
+  "Medical Records": { cls: "dept-mr", path: '<path d="M3 7l2-2h6l2 2h8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>' },
+  "Pharmacy": { cls: "dept-pharm", path: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/>' },
+  "Nursing Station": { cls: "dept-nurse", path: '<path d="M9 3v4M15 3v4M6 7h12v5a6 6 0 0 1-12 0V7z"/><path d="M12 12v6M9 21h6"/>' },
+  "Admitting": { cls: "dept-admit", path: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>' },
+  "IT Department": { cls: "dept-it", path: '<rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8M12 17v4"/>' }
 };
-
-/* Assign each department a rotating accent color (dept-c0 .. dept-c9) */
-const DEPT_ICON = {};
-DEPARTMENTS.forEach((dept, i) => {
-  DEPT_ICON[dept] = {
-    cls: `dept-c${i % 10}`,
-    path: DEPT_ICON_PATHS[dept] || '<rect x="3" y="4" width="18" height="12" rx="1.5"/>'
-  };
-});
 
 const STATUS_MAP = {
   "Good": "status-good",
@@ -98,36 +27,88 @@ const STATUS_MAP = {
 
 /* Rooms/areas each department's equipment can physically be found in */
 const DEPT_LOCATIONS = {
-  "Accounting and Finance": ["Finance Office, 3rd Floor", "Accounting Section, 3rd Floor"],
-  "Administrative Department": ["Admin Office, 3rd Floor", "Executive Office, 3rd Floor"],
-  "Dietary": ["Dietary Kitchen, Ground Floor", "Dietary Office, Ground Floor"],
-  "GSS": ["GSS Office, Ground Floor", "Maintenance Bay, Basement"],
-  "Heart Station": ["Heart Station, 2nd Floor", "Cardiac Unit, 2nd Floor"],
-  "HR": ["HR Office, 3rd Floor", "HR Records Room, 3rd Floor"],
-  "Imaging": ["Radiology Room 1, Ground Floor", "Radiology Room 2, Ground Floor", "CT Scan Room, Ground Floor"],
-  "IMRS": ["IMRS Office, 2nd Floor", "Data Center, 2nd Floor"],
-  "IT": ["IT Office, 6th Floor", "Server Room, 6th Floor", "IT Storage, 6th Floor"],
+  "Human Resources": ["HR Office, 3rd Floor", "HR Records Room, 3rd Floor"],
   "Laboratory": ["Lab Room 1, Ground Floor", "Lab Room 2, Ground Floor", "Specimen Collection, Ground Floor"],
-  "Marketing": ["Marketing Office, 3rd Floor"],
+  "Accounting": ["Accounting Office, 3rd Floor", "Billing Section, 3rd Floor"],
   "Medical Records": ["Records Room A, 2nd Floor", "Records Room B, 2nd Floor"],
-  "Nursing": ["Nurses Station A, 4th Floor", "Nurses Station B, 5th Floor", "Nurses Station C, 5th Floor"],
-  "OPD": ["OPD Clinic 1, Ground Floor", "OPD Clinic 2, Ground Floor", "OPD Waiting Area, Ground Floor"],
   "Pharmacy": ["Pharmacy Counter, Ground Floor", "Pharmacy Stockroom, Ground Floor"],
-  "Procurement": ["Procurement Office, 3rd Floor", "Supply Warehouse, Basement"],
-  "QA": ["QA Office, 3rd Floor"],
-  "Rehab": ["Rehab Gym, 2nd Floor", "Physical Therapy Room, 2nd Floor"],
-  "RTU": ["RTU Room, 4th Floor"],
-  "Social Service": ["Social Service Office, Ground Floor"]
+  "Nursing Station": ["Nurses Station A, 4th Floor", "Nurses Station B, 5th Floor", "Nurses Station C, 5th Floor"],
+  "Admitting": ["Admitting Desk, Ground Floor", "Triage Area, Ground Floor"],
+  "IT Department": ["IT Office, 6th Floor", "Server Room, 6th Floor", "IT Storage, 6th Floor"]
 };
 
-const DATA = [];
+function pickLocation(dept, seed) {
+  const options = DEPT_LOCATIONS[dept] || ["Main Building, Ground Floor"];
+  return options[seed % options.length];
+}
+
+/* Seed dataset — mirrors the design, extended to 245 records */
+function buildSeedData() {
+  const base = [
+    ["Human Resources", "PC-001 (Desktop)", "Juan Dela Cruz", "2026-08-18", "Good", "No issues found.", "HR Office, 3rd Floor"],
+    ["Laboratory", "Epson L5290 (Printer)", "Maria Santos", "2026-08-18", "With Issue", "ADF feeder problem.", "Lab Room 1, Ground Floor"],
+    ["Accounting", "PC-014 (Desktop)", "Mark Anthony", null, "Due", "Scheduled check", "Accounting Office, 3rd Floor"],
+    ["Medical Records", "Epson L120 (Printer)", "Ana Reyes", "2026-08-17", "With Issue", "Not printing properly.", "Records Room A, 2nd Floor"],
+    ["Pharmacy", "PC-003 (Desktop)", "Rhea Morales", "2026-08-17", "Good", "All functioning well.", "Pharmacy Counter, Ground Floor"],
+    ["Nursing Station", "PC-009 (Desktop)", "Jose P. Garcia", "2026-08-16", "For Monitoring", "Slow performance.", "Nurses Station A, 4th Floor"],
+    ["Admitting", "Canon G3010 (Printer)", "Liza Mendoza", "2026-08-16", "Good", "No issues found.", "Admitting Desk, Ground Floor"],
+    ["IT Department", "Server (Production)", "Lito Cabajar", "2026-08-15", "Good", "System normal.", "Server Room, 6th Floor"]
+  ];
+
+  const equipmentTypes = [
+    "PC (Desktop)", "PC (Laptop)", "Epson L5290 (Printer)", "Canon G3010 (Printer)",
+    "HP LaserJet (Printer)", "Router (Network)", "Switch (Network)", "UPS Unit",
+    "Server (Production)", "Server (Backup)", "Monitor 24in", "Barcode Scanner"
+  ];
+  const users = [
+    "Juan Dela Cruz", "Maria Santos", "Mark Anthony", "Ana Reyes", "Rhea Morales",
+    "Jose P. Garcia", "Liza Mendoza", "Lito Cabajar", "Carmela Sy", "Ramon Torres",
+    "Bea Villanueva", "Noel Ramos", "Grace Uy", "Ferdie Santos", "Ivy Domingo"
+  ];
+  const statuses = ["Good", "Good", "Good", "With Issue", "For Monitoring", "Due"];
+  const notesByStatus = {
+    "Good": ["All functioning well.", "No issues found.", "System normal.", "Passed inspection."],
+    "With Issue": ["ADF feeder problem.", "Not printing properly.", "Random shutdowns.", "Network drops intermittently."],
+    "For Monitoring": ["Slow performance.", "Fan noise, watching closely.", "Minor lag reported."],
+    "Due": ["Scheduled check", "Awaiting technician", "Queued for inspection"]
+  };
+
+  const rows = base.map((r, i) => ({ id: i + 1, department: r[0], equipment: r[1], user: r[2], date: r[3], status: r[4], notes: r[5], location: r[6] }));
+
+  let id = rows.length + 1;
+  const totalTarget = 245;
+  while (rows.length < totalTarget) {
+    const dept = DEPARTMENTS[id % DEPARTMENTS.length];
+    const equip = equipmentTypes[id % equipmentTypes.length];
+    const num = String(id).padStart(3, "0");
+    const user = users[id % users.length];
+    const status = statuses[id % statuses.length];
+    const hasDate = status !== "Due";
+    const day = 1 + (id % 28);
+    const month = 1 + (id % 8);
+    const date = hasDate ? `2026-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}` : null;
+    const notesArr = notesByStatus[status];
+    const notes = notesArr[id % notesArr.length];
+    const location = pickLocation(dept, id);
+    rows.push({
+      id,
+      department: dept,
+      equipment: `${equip.split(" (")[0]}-${num} (${equip.split(" (")[1] ?? "Desktop)"}`,
+      user,
+      date,
+      status,
+      notes,
+      location
+    });
+    id++;
+  }
+  return rows;
+}
+
+const DATA = buildSeedData();
 
 
 /* ---------------- State ---------------- */
-let currentPage = "checking";
-let dataLoaded = false;
-let dataError = false;
-
 const state = {
   search: "",
   department: "All",
@@ -160,11 +141,7 @@ const viewModalClose = document.getElementById("viewModalClose");
 
 const addModalOverlay = document.getElementById("addModalOverlay");
 const addModalClose = document.getElementById("addModalClose");
-const addModalTitle = document.getElementById("addModalTitle");
-const addFormSubmitBtn = document.getElementById("addFormSubmitBtn");
 const addCheckingBtn = document.getElementById("addCheckingBtn");
-const exportBtn = document.getElementById("exportBtn");
-const deleteAllBtn = document.getElementById("deleteAllBtn");
 const cancelAdd = document.getElementById("cancelAdd");
 const addForm = document.getElementById("addForm");
 const fDept = document.getElementById("fDept");
@@ -198,7 +175,7 @@ function initFilters() {
     statusFilter.appendChild(opt);
   });
 
-  const allLocations = Array.from(new Set(Object.values(DEPT_LOCATIONS).flat())).sort();
+  const allLocations = Array.from(new Set(DATA.map(r => r.location))).sort();
   allLocations.forEach(loc => {
     const opt = document.createElement("option");
     opt.value = loc;
@@ -252,12 +229,7 @@ function render() {
   if (pageRows.length === 0) {
     const tr = document.createElement("tr");
     tr.className = "empty-row";
-    const message = dataError
-      ? "Couldn't load equipment data — check your Firestore setup (see browser console for details)."
-      : dataLoaded
-        ? "No equipment records match your filters."
-        : "Loading equipment data\u2026";
-    tr.innerHTML = `<td colspan="8">${message}</td>`;
+    tr.innerHTML = `<td colspan="8">No equipment records match your filters.</td>`;
     tableBody.appendChild(tr);
   } else {
     pageRows.forEach(row => {
@@ -284,11 +256,8 @@ function render() {
             <button class="icon-btn" data-action="view" data-id="${row.id}" aria-label="View">
               <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
-            <button class="icon-btn" data-action="edit" data-id="${row.id}" aria-label="Edit">
-              <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-            </button>
-            <button class="icon-btn danger" data-action="delete" data-id="${row.id}" aria-label="Delete">
-              <svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/><path d="M10 11v6M14 11v6"/></svg>
+            <button class="icon-btn" data-action="more" data-id="${row.id}" aria-label="More options">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/></svg>
             </button>
           </div>
         </td>
@@ -378,7 +347,7 @@ function renderStats() {
 
   statTotal.textContent = total;
   statChecked.textContent = checkedCount;
-  statCheckedPct.textContent = total ? `${((checkedCount / total) * 100).toFixed(2)}% of total` : "0.00% of total";
+  statCheckedPct.textContent = `${((checkedCount / total) * 100).toFixed(2)}% of total`;
   statPending.textContent = pending;
   statIssues.textContent = issues;
 }
@@ -457,13 +426,11 @@ function openViewModal(id) {
 tableBody.addEventListener("click", (e) => {
   const btn = e.target.closest(".icon-btn");
   if (!btn) return;
-  const id = btn.dataset.id;
+  const id = Number(btn.dataset.id);
   if (btn.dataset.action === "view") {
     openViewModal(id);
-  } else if (btn.dataset.action === "edit") {
-    openEditModal(id);
-  } else if (btn.dataset.action === "delete") {
-    deleteRow(id);
+  } else if (btn.dataset.action === "more") {
+    openViewModal(id); // simplified: reuse detail view for "more"
   }
 });
 
@@ -472,49 +439,12 @@ viewModalOverlay.addEventListener("click", (e) => {
   if (e.target === viewModalOverlay) viewModalOverlay.classList.remove("open");
 });
 
-/* ---------------- Add / Edit Checking modal ---------------- */
-let editingId = null;
-
+/* ---------------- Add Checking modal ---------------- */
 function openAddModal() {
-  editingId = null;
   addForm.reset();
-  addModalTitle.textContent = "Add Equipment Checking";
-  addFormSubmitBtn.textContent = "Save Checking";
   fDate.valueAsDate = new Date();
   fLocation.value = (DEPT_LOCATIONS[fDept.value] || [""])[0];
   addModalOverlay.classList.add("open");
-}
-
-function openEditModal(id) {
-  const row = DATA.find(r => r.id === id);
-  if (!row) return;
-  editingId = id;
-  addModalTitle.textContent = "Edit Equipment Checking";
-  addFormSubmitBtn.textContent = "Save Changes";
-
-  fDept.value = row.department;
-  fEquipment.value = row.equipment;
-  fLocation.value = row.location;
-  fUser.value = row.user;
-  fDate.value = row.date || "";
-  fStatus.value = row.status;
-  fNotes.value = row.notes;
-
-  addModalOverlay.classList.add("open");
-}
-
-async function deleteRow(id) {
-  const row = DATA.find(r => r.id === id);
-  if (!row) return;
-  const ok = window.confirm(`Delete the checking record for "${row.equipment}"? This can't be undone.`);
-  if (!ok) return;
-  try {
-    await deleteDoc(doc(db, CHECKS_COLLECTION, id));
-    showToast("Equipment checking deleted.");
-  } catch (err) {
-    console.error("Delete failed:", err);
-    showToast("Couldn't delete this record. Check your connection.");
-  }
 }
 
 fDept.addEventListener("change", () => {
@@ -529,10 +459,10 @@ addModalOverlay.addEventListener("click", (e) => {
   if (e.target === addModalOverlay) addModalOverlay.classList.remove("open");
 });
 
-addForm.addEventListener("submit", async (e) => {
+addForm.addEventListener("submit", (e) => {
   e.preventDefault();
-
-  const values = {
+  const newRow = {
+    id: DATA.length ? Math.max(...DATA.map(r => r.id)) + 1 : 1,
     department: fDept.value,
     equipment: fEquipment.value.trim(),
     location: fLocation.value.trim() || "Location not specified",
@@ -541,108 +471,12 @@ addForm.addEventListener("submit", async (e) => {
     status: fStatus.value,
     notes: fNotes.value.trim() || "No notes provided."
   };
-
-  addFormSubmitBtn.disabled = true;
-
-  try {
-    if (editingId !== null) {
-      await updateDoc(doc(db, CHECKS_COLLECTION, editingId), values);
-      addModalOverlay.classList.remove("open");
-      showToast("Equipment checking updated successfully.");
-    } else {
-      await addDoc(checksRef, { ...values, createdAt: serverTimestamp() });
-      addModalOverlay.classList.remove("open");
-      state.page = 1;
-      showToast("Equipment checking added successfully.");
-    }
-  } catch (err) {
-    console.error("Save failed:", err);
-    showToast("Couldn't save this record. Check your connection.");
-  } finally {
-    addFormSubmitBtn.disabled = false;
-    editingId = null;
-  }
+  DATA.unshift(newRow);
+  addModalOverlay.classList.remove("open");
+  state.page = 1;
+  render();
+  showToast("Equipment checking added successfully.");
 });
-
-/* ---------------- Export (extract) filtered records to CSV ---------------- */
-function exportFilteredToCsv() {
-  const rows = getFiltered();
-  if (!rows.length) {
-    showToast("No records match the current filters.");
-    return;
-  }
-
-  const headers = ["Department", "Equipment", "Location", "User", "Date Checked", "Status", "Notes"];
-  const csvEscape = (val) => {
-    const s = String(val ?? "");
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-
-  const lines = [headers.join(",")];
-  rows.forEach(r => {
-    lines.push([
-      r.department, r.equipment, r.location, r.user,
-      r.date ? formatDate(r.date) : "\u2013", r.status, r.notes
-    ].map(csvEscape).join(","));
-  });
-
-  const csvContent = lines.join("\n");
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  const stamp = new Date().toISOString().slice(0, 10);
-  a.href = url;
-  a.download = `equipment-checking-${stamp}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-
-  showToast(`Exported ${rows.length} record${rows.length === 1 ? "" : "s"} to CSV.`);
-}
-
-exportBtn.addEventListener("click", exportFilteredToCsv);
-
-/* ---------------- Delete All (filtered) ---------------- */
-async function deleteAllFiltered() {
-  const rows = getFiltered();
-
-  if (!rows.length) {
-    showToast("No records match the current filters.");
-    return;
-  }
-
-  const isUnfiltered = state.search === "" && state.department === "All" &&
-    state.status === "All" && state.date === "All" && state.location === "All";
-
-  const warning = isUnfiltered
-    ? `Delete ALL ${rows.length} equipment checking records? This cannot be undone.`
-    : `Delete ${rows.length} record${rows.length === 1 ? "" : "s"} matching the current filters? This cannot be undone.`;
-
-  const ok = window.confirm(warning);
-  if (!ok) return;
-
-  deleteAllBtn.disabled = true;
-  try {
-    const batchSize = 400;
-    for (let i = 0; i < rows.length; i += batchSize) {
-      const batch = writeBatch(db);
-      rows.slice(i, i + batchSize).forEach(row => {
-        batch.delete(doc(db, CHECKS_COLLECTION, row.id));
-      });
-      await batch.commit();
-    }
-    state.page = 1;
-    showToast(`Deleted ${rows.length} record${rows.length === 1 ? "" : "s"}.`);
-  } catch (err) {
-    console.error("Delete all failed:", err);
-    showToast("Couldn't delete these records. Check your connection.");
-  } finally {
-    deleteAllBtn.disabled = false;
-  }
-}
-
-deleteAllBtn.addEventListener("click", deleteAllFiltered);
 
 /* ---------------- Toast ---------------- */
 let toastTimer;
@@ -918,14 +752,8 @@ const PAGE_RENDERERS = {
 
 const pageTitleEl = document.getElementById("pageTitle");
 
-function rerenderCurrentPage() {
-  const renderer = PAGE_RENDERERS[currentPage];
-  if (renderer) renderer();
-}
-
 function switchPage(page) {
   if (!PAGE_TITLES[page]) return;
-  currentPage = page;
 
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   const target = document.getElementById("page-" + page);
@@ -1005,37 +833,6 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-/* ---------------- Firestore realtime sync ---------------- */
-function startRealtimeSync() {
-  onSnapshot(
-    query(checksRef, orderBy("createdAt", "desc")),
-    (snapshot) => {
-      dataError = false;
-      DATA.length = 0;
-      snapshot.forEach(docSnap => DATA.push({ id: docSnap.id, ...docSnap.data() }));
-
-      if (!dataLoaded) {
-        dataLoaded = true;
-        switchPage("checking");
-      } else {
-        rerenderCurrentPage();
-      }
-    },
-    (err) => {
-      console.error("Firestore sync error:", err);
-      dataError = true;
-      showToast("Couldn't connect to Firestore — check your config and rules.");
-
-      if (!dataLoaded) {
-        dataLoaded = true;
-        switchPage("checking");
-      } else {
-        rerenderCurrentPage();
-      }
-    }
-  );
-}
-
 /* ---------------- Init ---------------- */
 initFilters();
-startRealtimeSync();
+switchPage("checking");
