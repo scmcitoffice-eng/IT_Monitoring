@@ -199,6 +199,7 @@ const DATA = [];
 /* ---------------- State ---------------- */
 let currentPage = "checking";
 let dataLoaded = false;
+let dataError = false;
 
 const state = {
   search: "",
@@ -324,7 +325,12 @@ function render() {
   if (pageRows.length === 0) {
     const tr = document.createElement("tr");
     tr.className = "empty-row";
-    tr.innerHTML = `<td colspan="8">${dataLoaded ? "No equipment records match your filters." : "Loading equipment data\u2026"}</td>`;
+    const message = dataError
+      ? "Couldn't load equipment data — check your Firestore setup (see browser console for details)."
+      : dataLoaded
+        ? "No equipment records match your filters."
+        : "Loading equipment data\u2026";
+    tr.innerHTML = `<td colspan="8">${message}</td>`;
     tableBody.appendChild(tr);
   } else {
     pageRows.forEach(row => {
@@ -1110,6 +1116,7 @@ function startRealtimeSync() {
   onSnapshot(
     query(checksRef, orderBy("createdAt", "desc")),
     (snapshot) => {
+      dataError = false;
       DATA.length = 0;
       snapshot.forEach(docSnap => DATA.push({ id: docSnap.id, ...docSnap.data() }));
 
@@ -1123,7 +1130,15 @@ function startRealtimeSync() {
     },
     (err) => {
       console.error("Firestore sync error:", err);
+      dataError = true;
       showToast("Couldn't connect to Firestore — check your config and rules.");
+
+      if (!dataLoaded) {
+        dataLoaded = true;
+        switchPage("checking");
+      } else {
+        rerenderCurrentPage();
+      }
     }
   );
 }
