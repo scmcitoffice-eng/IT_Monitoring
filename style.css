@@ -346,6 +346,7 @@ tbody tr:last-child td{border-bottom:none;}
 .action-cell{display:flex;gap:14px;justify-content:flex-end;color:var(--text-sub);font-size:14px;}
 .action-cell span{cursor:pointer;}
 .action-cell span:hover{color:var(--text-main);}
+.action-cell span[data-action="delete"]:hover{color:#e0403f;}
 
 .table-footer{
   display:flex;align-items:center;justify-content:space-between;

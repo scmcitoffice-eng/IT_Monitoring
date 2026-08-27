@@ -655,6 +655,7 @@ function equipmentRowHtml(e) {
         <div class="action-cell">
           <span title="View" data-action="view">👁</span>
           <span title="Edit" data-action="edit">✎</span>
+          <span title="Delete" data-action="delete">🗑</span>
           <span title="More" data-action="more">⋮</span>
         </div>
       </td>
@@ -710,6 +711,7 @@ function bindEquipmentRowActions(tbodyEl) {
     const action = actionEl.dataset.action;
     if (action === "view") openViewEquipmentModal(id);
     else if (action === "edit") openEditEquipmentModal(id);
+    else if (action === "delete") confirmDeleteEquipment(id);
     else if (action === "more") {
       openDropdown(actionEl, [
         { label: "View details", onClick: () => openViewEquipmentModal(id) },
