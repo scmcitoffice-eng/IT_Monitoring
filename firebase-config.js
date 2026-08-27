@@ -7,7 +7,7 @@
    ========================================================== */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { getDatabase } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
+import { getDatabase, ref, get, set, child } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
 import { getAnalytics, isSupported as analyticsIsSupported } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-analytics.js";
 
 // NOTE: Firebase *client* config values (apiKey, authDomain, etc.) are not
@@ -38,6 +38,14 @@ analyticsIsSupported().then((supported) => {
 // one) can read from it once you're ready to wire in live data.
 window.firebaseApp = firebaseApp;
 window.firebaseDb = db;
+
+// script.js is a classic (non-module) script, so it can't `import` from the
+// Firebase SDK directly. Hand it the handful of database functions it needs
+// via window instead, so it can persist STATE across reloads.
+window.fbRef = ref;
+window.fbGet = get;
+window.fbSet = set;
+window.fbChild = child;
 
 // Fires once this module has finished running, so script.js (or you, in
 // devtools) can reliably know the connection is ready.

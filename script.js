@@ -160,6 +160,101 @@ function recomputeDerived() {
 }
 recomputeDerived();
 
+/* ==========================================================
+   Firebase persistence
+   All app data lives under a single "appData" node in the
+   Realtime Database, split into per-slice children so an edit
+   to (say) equipment doesn't require rewriting alerts/users/etc:
+     appData/equipment
+     appData/alerts
+     appData/maintenanceTasks
+     appData/users
+     appData/settings
+   ========================================================== */
+const FB_ROOT = "appData";
+
+// True once we've confirmed window.firebaseDb + the helper fns exist.
+function firebaseReady() {
+  return !!(window.firebaseDb && window.fbRef && window.fbGet && window.fbSet);
+}
+
+// Write one slice of STATE to Firebase. Fails silently (console-only) so the
+// app keeps working purely in-memory if the network/config isn't available.
+function saveSlice(key, value) {
+  if (!firebaseReady()) return;
+  window.fbSet(window.fbRef(window.firebaseDb, `${FB_ROOT}/${key}`), value)
+    .catch(err => console.warn(`[firebase] Failed to save "${key}":`, err));
+}
+function saveEquipment() { saveSlice("equipment", STATE.equipment); }
+function saveAlerts() { saveSlice("alerts", STATE.alerts); }
+function saveTasks() { saveSlice("maintenanceTasks", STATE.maintenanceTasks); }
+function saveUsers() { saveSlice("users", STATE.users); }
+function saveSettings() { saveSlice("settings", STATE.settings); }
+
+// Recompute the nextXId counters from whatever was loaded, so newly created
+// records never collide with ids that already exist in the database.
+function maxId(list) { return list.reduce((m, item) => Math.max(m, item.id || 0), 0); }
+function resyncIdCounters() {
+  nextEquipmentId = maxId(STATE.equipment) + 1;
+  nextAlertId = maxId(STATE.alerts) + 1;
+  nextTaskId = maxId(STATE.maintenanceTasks) + 1;
+  nextUserId = maxId(STATE.users) + 1;
+}
+
+// Wait (briefly) for firebase-config.js's module script to finish, in case
+// this runs before window.firebaseDb has been set.
+function waitForFirebase(timeoutMs = 4000) {
+  return new Promise((resolve) => {
+    if (firebaseReady()) return resolve(true);
+    const onReady = () => { clearTimeout(timer); resolve(firebaseReady()); };
+    window.addEventListener("firebase-ready", onReady, { once: true });
+    const timer = setTimeout(() => {
+      window.removeEventListener("firebase-ready", onReady);
+      resolve(firebaseReady());
+    }, timeoutMs);
+  });
+}
+
+// Load previously-saved data from Firebase, if any. Returns true if we
+// found and applied saved data, false if there was nothing there yet (or
+// Firebase wasn't reachable) — in which case the seeded defaults stand.
+async function loadStateFromFirebase() {
+  try {
+    const ready = await waitForFirebase();
+    if (!ready) {
+      console.warn("[firebase] Not available — running with in-memory data only.");
+      return false;
+    }
+    const snap = await window.fbGet(window.fbRef(window.firebaseDb, FB_ROOT));
+    if (!snap.exists()) return false;
+    const data = snap.val() || {};
+    if (Array.isArray(data.equipment) && data.equipment.length > 0) {
+      STATE.equipment = data.equipment;
+      STATE.alerts = Array.isArray(data.alerts) ? data.alerts : [];
+      STATE.maintenanceTasks = Array.isArray(data.maintenanceTasks) ? data.maintenanceTasks : [];
+      STATE.users = Array.isArray(data.users) ? data.users : [];
+      if (data.settings) Object.assign(STATE.settings, data.settings);
+      resyncIdCounters();
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn("[firebase] Could not load saved data — using defaults.", err);
+    return false;
+  }
+}
+
+// First run ever (nothing saved yet): push the generated seed data up so the
+// database and the UI start out in sync.
+function seedFirebase() {
+  if (!firebaseReady()) return;
+  saveEquipment();
+  saveAlerts();
+  saveTasks();
+  saveUsers();
+  saveSettings();
+}
+
 /* ---------- Helpers ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -370,6 +465,7 @@ function addEquipment(data) {
   });
   recomputeDerived();
   refreshAfterDataChange();
+  saveEquipment();
   showToast(`Added "${data.name}"`);
 }
 
@@ -380,6 +476,7 @@ function updateEquipmentById(id, data) {
   Object.assign(eq, { name: data.name, model: data.model, type: data.type, icon: cfg.icon, location: data.location, status: data.status });
   recomputeDerived();
   refreshAfterDataChange();
+  saveEquipment();
   showToast(`Updated "${eq.name}"`);
 }
 
@@ -389,6 +486,7 @@ function deleteEquipmentById(id) {
   STATE.equipment = STATE.equipment.filter(e => e.id !== id);
   recomputeDerived();
   refreshAfterDataChange();
+  saveEquipment();
   showToast(`Deleted "${eq.name}"`);
 }
 
@@ -834,11 +932,13 @@ function mountAlertsPage(container) {
     if (a) a.dismissed = true;
     renderAlertsListFull();
     renderAlerts();
+    saveAlerts();
   });
   $("#markAllReadBtn", container).addEventListener("click", () => {
     STATE.alerts.forEach(a => a.dismissed = true);
     renderAlertsListFull();
     renderAlerts();
+    saveAlerts();
     showToast("All alerts dismissed");
   });
 }
@@ -877,6 +977,7 @@ function mountMaintenancePage(container) {
     const task = STATE.maintenanceTasks.find(t => t.id === id);
     if (task) task.done = !task.done;
     renderTaskList();
+    saveTasks();
   });
   $("#addTaskBtn", container).addEventListener("click", () => {
     const eqOptions = STATE.equipment.map(e => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join("");
@@ -903,6 +1004,7 @@ function mountMaintenancePage(container) {
           });
           renderTaskList();
           closeModal();
+          saveTasks();
           showToast("Task added");
         });
       }
@@ -1008,6 +1110,7 @@ function mountUsersPage(container) {
     const id = parseInt(btn.dataset.removeUser, 10);
     STATE.users = STATE.users.filter(u => u.id !== id);
     renderUserList();
+    saveUsers();
     showToast("User removed");
   });
   $("#addUserBtn", container).addEventListener("click", () => {
@@ -1030,6 +1133,7 @@ function mountUsersPage(container) {
           STATE.users.push({ id: nextUserId++, name, email: $("#uEmail", overlay).value.trim() || "—", role: $("#uRole", overlay).value });
           renderUserList();
           closeModal();
+          saveUsers();
           showToast("User added");
         });
       }
@@ -1064,11 +1168,13 @@ function mountSettingsPage(container) {
   $("#toggleTheme", container).addEventListener("change", (e) => {
     STATE.settings.theme = e.target.checked ? "dark" : "light";
     document.body.classList.toggle("theme-dark", e.target.checked);
+    saveSettings();
     showToast(`Dark theme ${e.target.checked ? "on" : "off"}`);
   });
   $("#toggleNotifications", container).addEventListener("change", (e) => {
     STATE.settings.notifications = e.target.checked;
     $("#alertCount").style.display = e.target.checked ? "" : "none";
+    saveSettings();
     showToast(`Notifications ${e.target.checked ? "on" : "off"}`);
   });
   $("#toggleAutoRefresh", container).addEventListener("change", (e) => {
@@ -1080,8 +1186,10 @@ function mountSettingsPage(container) {
         if (eq) eq.lastCheck = "Just now";
         if (STATE.ui.activePage === "Dashboard") renderDashboardTable();
         if (STATE.ui.activePage === "Equipment") renderEquipmentPageTable();
+        saveEquipment();
       }, 8000);
     }
+    saveSettings();
     showToast(`Auto-refresh ${e.target.checked ? "enabled" : "disabled"}`);
   });
 }
@@ -1092,7 +1200,16 @@ window.addEventListener("firebase-ready", () => {
 });
 
 /* ---------- Init ---------- */
-function init() {
+async function init() {
+  const loaded = await loadStateFromFirebase();
+  recomputeDerived();
+  if (!loaded) seedFirebase(); // first run ever: push the generated seed data up
+
+  // Apply persisted settings that affect the initial render.
+  document.body.classList.toggle("theme-dark", STATE.settings.theme === "dark");
+  const alertBadge = $("#alertCount");
+  if (alertBadge) alertBadge.style.display = STATE.settings.notifications ? "" : "none";
+
   renderDate();
   renderStatCards();
   renderStatusDonut();
@@ -1104,6 +1221,16 @@ function init() {
   bindMisc();
   bindCardMenus();
   bindEquipmentRowActions($("#equipmentBody"));
+
+  if (STATE.settings.autoRefresh) {
+    autoRefreshTimer = setInterval(() => {
+      const eq = STATE.equipment[Math.floor(Math.random() * STATE.equipment.length)];
+      if (eq) eq.lastCheck = "Just now";
+      if (STATE.ui.activePage === "Dashboard") renderDashboardTable();
+      if (STATE.ui.activePage === "Equipment") renderEquipmentPageTable();
+      saveEquipment();
+    }, 8000);
+  }
 }
 
 document.addEventListener("DOMContentLoaded", init);
