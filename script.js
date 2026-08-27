@@ -353,12 +353,10 @@ function renderDate() {
 /* ---------- Stat cards ---------- */
 function renderStatCards() {
   const { totalEquipment, statusCounts } = STATE;
-  const online = statusCounts.online || 0, warning = statusCounts.warning || 0, offline = statusCounts.offline || 0;
+  const warning = statusCounts.warning || 0;
   const cards = [
     { icon: "🖥", iconClass: "maroon", label: "Total Equipment", value: totalEquipment, foot: "All Locations", mini: "▤" },
-    { icon: "✓", iconClass: "green",  label: "Online",  value: online,  foot: `${pct(online, totalEquipment)}%`,  mini: "📈" },
-    { icon: "⚠", iconClass: "amber",  label: "Warning", value: warning, foot: `${pct(warning, totalEquipment)}%`, mini: "📊" },
-    { icon: "✕", iconClass: "red",    label: "Offline", value: offline, foot: `${pct(offline, totalEquipment)}%`, mini: "◔" }
+    { icon: "⚠", iconClass: "amber",  label: "Warning", value: warning, foot: `${pct(warning, totalEquipment)}%`, mini: "📊" }
   ];
   $("#statGrid").innerHTML = cards.map(c => `
     <div class="stat-card">
@@ -401,9 +399,7 @@ function buildDonut(svgEl, segments, size = 200, thickness = 26) {
 function renderStatusDonut() {
   const { statusCounts, totalEquipment } = STATE;
   const segments = [
-    { label: "Online",  value: statusCounts.online || 0,  color: "#22b06b" },
-    { label: "Warning", value: statusCounts.warning || 0, color: "#f5a623" },
-    { label: "Offline", value: statusCounts.offline || 0, color: "#e0403f" }
+    { label: "Warning", value: statusCounts.warning || 0, color: "#f5a623" }
   ];
   buildDonut($("#statusDonut"), segments);
   $("#statusLegend").innerHTML = segments.map(s => `
@@ -501,7 +497,7 @@ function refreshAfterDataChange() {
 
 function equipmentFormHtml(eq) {
   const typeOptions = TYPE_CATEGORIES.map(c => `<option value="${c.key}" ${eq && eq.type === c.key ? "selected" : ""}>${c.label.replace(/s$/, "")}</option>`).join("");
-  const statusOptions = ["online", "warning", "offline"].map(s => `<option value="${s}" ${eq && eq.status === s ? "selected" : ""}>${capitalize(s)}</option>`).join("");
+  const statusOptions = ["warning"].map(s => `<option value="${s}" ${eq && eq.status === s ? "selected" : ""}>${capitalize(s)}</option>`).join("");
   const locationOptions = LOCATIONS.map(l => `<option value="${l}" ${eq && eq.location === l ? "selected" : ""}>${l}</option>`).join("");
   return `
     <form id="equipmentForm">
