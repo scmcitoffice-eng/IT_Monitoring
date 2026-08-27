@@ -3,9 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Scheduled IT Equipment Checking | St. Camillus Medical Center</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<title>IT Monitoring System — Dashboard</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,246 +13,158 @@
   <!-- Sidebar -->
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-icon">✚</div>
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M3 12h4l2-7 4 14 2-7h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
       <div class="brand-text">
-        <div class="brand-name">St. Camillus</div>
-        <div class="brand-name">Medical Center</div>
+        <div class="brand-title">IT MONITORING SYSTEM</div>
+        <div class="brand-sub">EQUIPMENT MONITORING</div>
       </div>
     </div>
-    <div class="brand-sub">IT Equipment Management System</div>
 
     <nav class="nav">
-      <a href="#" class="nav-item" data-view="dashboard">
-        <span class="nav-icon">⌂</span> Dashboard
+      <a href="#" class="nav-item active" data-page="Dashboard">
+        <span class="nav-icon">▦</span> Dashboard
       </a>
-      <div class="nav-group">
-        <a href="#" class="nav-item" data-toggle="equipment-sub">
-          <span class="nav-icon">🖥</span> Equipment <span class="nav-caret">⌄</span>
-        </a>
-        <div class="nav-sub" id="equipment-sub">
-          <a href="#" class="nav-subitem">All Equipment</a>
-          <a href="#" class="nav-subitem">Categories</a>
-        </div>
-      </div>
-      <a href="#" class="nav-item" data-view="schedule">
-        <span class="nav-icon">🗓</span> Schedule
+      <a href="#" class="nav-item" data-page="Equipment">
+        <span class="nav-icon">🖥</span> Equipment
       </a>
-      <a href="#" class="nav-item active" data-view="checking">
-        <span class="nav-icon">☑</span> Equipment Checking
+      <a href="#" class="nav-item" data-page="Alerts">
+        <span class="nav-icon">🔔</span> Alerts
       </a>
-      <a href="#" class="nav-item" data-view="issues">
-        <span class="nav-icon">⚠</span> Issues / Service
+      <a href="#" class="nav-item" data-page="Maintenance">
+        <span class="nav-icon">🛠</span> Maintenance
       </a>
-      <div class="nav-group">
-        <a href="#" class="nav-item" data-toggle="reports-sub">
-          <span class="nav-icon">📊</span> Reports <span class="nav-caret">⌄</span>
-        </a>
-        <div class="nav-sub" id="reports-sub">
-          <a href="#" class="nav-subitem">Checking Summary</a>
-          <a href="#" class="nav-subitem">Department Summary</a>
-        </div>
-      </div>
-      <a href="#" class="nav-item" data-view="users">
-        <span class="nav-icon">👥</span> Users
+      <a href="#" class="nav-item" data-page="Reports">
+        <span class="nav-icon">📄</span> Reports
       </a>
-      <a href="#" class="nav-item" data-view="settings">
+      <a href="#" class="nav-item" data-page="Locations">
+        <span class="nav-icon">📍</span> Locations
+      </a>
+      <a href="#" class="nav-item" data-page="Users">
+        <span class="nav-icon">👤</span> Users
+      </a>
+      <a href="#" class="nav-item" data-page="Settings">
         <span class="nav-icon">⚙</span> Settings
       </a>
     </nav>
 
-    <div class="help-card">
-      <div class="help-icon">💬</div>
-      <div class="help-title">Need Help?</div>
-      <div class="help-body">
-        IT Support<br>
-        loc. 1234<br>
-        <a href="mailto:itdepartment@scmc.com.ph">itdepartment@scmc.com.ph</a>
+    <div class="sidebar-user">
+      <div class="user-avatar">👤</div>
+      <div class="user-info">
+        <div class="user-name">IT Administrator</div>
+        <div class="user-role">System Admin</div>
       </div>
     </div>
   </aside>
 
   <!-- Main -->
   <main class="main">
+
     <header class="topbar">
-      <button class="menu-btn" id="menuBtn" aria-label="Toggle menu">☰</button>
-      <h1>Scheduled IT Equipment Checking</h1>
+      <div>
+        <h1>Dashboard</h1>
+        <p class="subtitle">Overview of all monitored equipment</p>
+      </div>
       <div class="topbar-right">
-        <button class="icon-btn" aria-label="Notifications">
-          🔔 <span class="badge" id="notifBadge">3</span>
+        <button class="icon-btn" id="bellBtn" aria-label="Notifications">
+          🔔
+          <span class="badge" id="alertCount">3</span>
         </button>
-        <div class="user-chip">
-          <div class="avatar">👤</div>
-          <div class="user-meta">
-            <div class="user-name">Liza</div>
-            <div class="user-role">IT Admin</div>
+        <div class="date-block">
+          <div class="date-icon">📅</div>
+          <div>
+            <div class="date-main" id="dateMain">—</div>
+            <div class="date-sub" id="dateSub">—</div>
           </div>
         </div>
       </div>
     </header>
 
-    <section class="content">
+    <!-- Stat Cards -->
+    <section class="stat-grid" id="statGrid"></section>
 
-      <!-- Stat cards -->
-      <div class="stats">
-        <div class="stat-card">
-          <div class="stat-icon blue">🖥</div>
-          <div class="stat-body">
-            <div class="stat-label">Total Equipment</div>
-            <div class="stat-value" id="statTotal">0</div>
-            <a href="#" class="stat-link">View all equipment</a>
-          </div>
+    <!-- Middle Row -->
+    <section class="mid-grid">
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Equipment Status Overview</h2>
+          <button class="dots-btn" aria-label="More options">⋮</button>
         </div>
-        <div class="stat-card">
-          <div class="stat-icon green">✓</div>
-          <div class="stat-body">
-            <div class="stat-label">Checked</div>
-            <div class="stat-value" id="statChecked">0</div>
-            <div class="stat-sub green" id="statCheckedPct">0% of total</div>
+        <div class="donut-row">
+          <div class="donut-wrap">
+            <svg id="statusDonut" viewBox="0 0 200 200"></svg>
+            <div class="donut-center">
+              <div class="donut-total-label">Total</div>
+              <div class="donut-total-value">48</div>
+            </div>
           </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon amber">🕐</div>
-          <div class="stat-body">
-            <div class="stat-label">Pending / Due</div>
-            <div class="stat-value" id="statPending">0</div>
-            <div class="stat-sub amber">To be checked</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon red">⚠</div>
-          <div class="stat-body">
-            <div class="stat-label">With Issues</div>
-            <div class="stat-value" id="statIssues">0</div>
-            <div class="stat-sub red">Need attention</div>
-          </div>
+          <ul class="legend" id="statusLegend"></ul>
         </div>
       </div>
 
-      <!-- Filters -->
-      <div class="panel">
-        <div class="filters">
-          <div class="search-field">
+      <div class="card">
+        <div class="card-head">
+          <h2>Alerts</h2>
+          <a href="#" class="link">View All</a>
+        </div>
+        <ul class="alert-list" id="alertList"></ul>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Equipment by Type</h2>
+        </div>
+        <div class="donut-row">
+          <div class="donut-wrap">
+            <svg id="typeDonut" viewBox="0 0 200 200"></svg>
+          </div>
+          <ul class="legend" id="typeLegend"></ul>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Recent Equipment Table -->
+    <section class="card table-card">
+      <div class="card-head table-head">
+        <h2>Recent Equipment</h2>
+        <div class="table-actions">
+          <div class="search-box">
             <span class="search-icon">🔍</span>
             <input type="text" id="searchInput" placeholder="Search equipment...">
           </div>
-
-          <div class="field">
-            <label for="deptFilter">Department</label>
-            <select id="deptFilter"><option value="All">All</option></select>
-          </div>
-
-          <div class="field">
-            <label for="statusFilter">Status</label>
-            <select id="statusFilter"><option value="All">All</option></select>
-          </div>
-
-          <div class="field">
-            <label for="locFilter">Location</label>
-            <select id="locFilter"><option value="All">All</option></select>
-          </div>
-
-          <div class="field">
-            <label for="dateFilter">Date Checked</label>
-            <input type="date" id="dateFilter">
-          </div>
-
-          <button class="btn btn-outline" id="exportBtn">⭳ Export</button>
-          <button class="btn btn-danger-outline" id="deleteFilteredBtn">🗑 Delete Filtered</button>
+          <button class="btn-primary" id="addEquipmentBtn">+ Add Equipment</button>
         </div>
+      </div>
 
-        <div class="table-toolbar">
-          <button class="btn btn-primary" id="addBtn">+ Add Checking</button>
-        </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Equipment Name</th>
+              <th>Type</th>
+              <th>Location</th>
+              <th>Status</th>
+              <th>Last Check</th>
+              <th class="th-action">Action</th>
+            </tr>
+          </thead>
+          <tbody id="equipmentBody"></tbody>
+        </table>
+      </div>
 
-        <div class="table-wrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Department</th>
-                <th>Equipment</th>
-                <th>Location</th>
-                <th>User</th>
-                <th>Date Checked</th>
-                <th>Status</th>
-                <th>Notes</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="tableBody"></tbody>
-          </table>
-          <div class="empty-state" id="emptyState" hidden>
-            <div class="empty-icon">🗂</div>
-            <div class="empty-title">No records match your filters</div>
-            <div class="empty-sub">Try adjusting the search or filters above.</div>
-          </div>
-        </div>
+      <div class="table-footer">
+        <span class="entries-label" id="entriesLabel">Showing 1 to 5 of 48 entries</span>
+        <div class="pagination" id="pagination"></div>
       </div>
     </section>
+
   </main>
 </div>
-
-<!-- Add/Edit Modal -->
-<div class="modal-overlay" id="modalOverlay" hidden>
-  <div class="modal">
-    <div class="modal-header">
-      <h2 id="modalTitle">Add Equipment Checking</h2>
-      <button class="modal-close" id="modalClose">✕</button>
-    </div>
-    <form id="checkingForm" class="modal-body">
-      <div class="form-row">
-        <label>Department</label>
-        <input type="text" id="fDepartment" list="deptList" required placeholder="e.g. Human Resources">
-        <datalist id="deptList"></datalist>
-      </div>
-      <div class="form-row">
-        <label>Equipment</label>
-        <input type="text" id="fEquipment" required placeholder="e.g. PC-014 (Desktop)">
-      </div>
-      <div class="form-row">
-        <label>Location</label>
-        <input type="text" id="fLocation" required placeholder="e.g. Accounting Office, 3rd Floor">
-      </div>
-      <div class="form-row">
-        <label>User</label>
-        <input type="text" id="fUser" required placeholder="e.g. Mark Anthony">
-      </div>
-      <div class="form-row">
-        <label>Date Checked</label>
-        <input type="date" id="fDate">
-      </div>
-      <div class="form-row">
-        <label>Status</label>
-        <select id="fStatus" required>
-          <option value="Good">Good</option>
-          <option value="With Issue">With Issue</option>
-          <option value="For Monitoring">For Monitoring</option>
-          <option value="Due">Due</option>
-        </select>
-      </div>
-      <div class="form-row">
-        <label>Notes</label>
-        <textarea id="fNotes" rows="3" placeholder="e.g. No issues found."></textarea>
-      </div>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save Record</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- View Modal -->
-<div class="modal-overlay" id="viewOverlay" hidden>
-  <div class="modal modal-view">
-    <div class="modal-header">
-      <h2>Equipment Check Details</h2>
-      <button class="modal-close" id="viewClose">✕</button>
-    </div>
-    <div class="modal-body" id="viewBody"></div>
-  </div>
-</div>
-
-<div class="toast" id="toast" hidden></div>
 
 <script src="script.js"></script>
 </body>
