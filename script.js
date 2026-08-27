@@ -1,1008 +1,323 @@
-/* =========================================================
-   Scheduled IT Equipment Checking — Dashboard Logic
-   ========================================================= */
+(() => {
+  "use strict";
 
-const DEPARTMENTS = [
-  "Human Resources", "Laboratory", "Accounting", "Medical Records",
-  "Pharmacy", "Nursing Station", "Admitting", "IT Department"
-];
+  /* ---------------- DATA ---------------- */
+  const STORAGE_KEY = "scmc-equipment-checking";
 
-const DEPT_ICON = {
-  "Human Resources": { cls: "dept-hr", path: '<circle cx="9" cy="8" r="3"/><path d="M2.5 20c0-3.4 2.9-6 6.5-6s6.5 2.6 6.5 6"/><path d="M16 4.7c1.5.4 2.6 1.8 2.6 3.4 0 1.6-1.1 3-2.6 3.4M21.5 20c0-2.8-1.9-5-4.5-5.7"/>' },
-  "Laboratory": { cls: "dept-lab", path: '<path d="M9 2h6M10 2v6.5L4.5 18a2 2 0 0 0 1.7 3h11.6a2 2 0 0 0 1.7-3L14 8.5V2"/><path d="M7.5 14h9"/>' },
-  "Accounting": { cls: "dept-acct", path: '<rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M8 7h8M8 11h3M8 15h3M14 11h2M14 15h2"/>' },
-  "Medical Records": { cls: "dept-mr", path: '<path d="M3 7l2-2h6l2 2h8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>' },
-  "Pharmacy": { cls: "dept-pharm", path: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/>' },
-  "Nursing Station": { cls: "dept-nurse", path: '<path d="M9 3v4M15 3v4M6 7h12v5a6 6 0 0 1-12 0V7z"/><path d="M12 12v6M9 21h6"/>' },
-  "Admitting": { cls: "dept-admit", path: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>' },
-  "IT Department": { cls: "dept-it", path: '<rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8M12 17v4"/>' }
-};
-
-const STATUS_MAP = {
-  "Good": "status-good",
-  "With Issue": "status-issue",
-  "Due": "status-due",
-  "For Monitoring": "status-monitoring"
-};
-
-/* Rooms/areas each department's equipment can physically be found in */
-const DEPT_LOCATIONS = {
-  "Human Resources": ["HR Office, 3rd Floor", "HR Records Room, 3rd Floor"],
-  "Laboratory": ["Lab Room 1, Ground Floor", "Lab Room 2, Ground Floor", "Specimen Collection, Ground Floor"],
-  "Accounting": ["Accounting Office, 3rd Floor", "Billing Section, 3rd Floor"],
-  "Medical Records": ["Records Room A, 2nd Floor", "Records Room B, 2nd Floor"],
-  "Pharmacy": ["Pharmacy Counter, Ground Floor", "Pharmacy Stockroom, Ground Floor"],
-  "Nursing Station": ["Nurses Station A, 4th Floor", "Nurses Station B, 5th Floor", "Nurses Station C, 5th Floor"],
-  "Admitting": ["Admitting Desk, Ground Floor", "Triage Area, Ground Floor"],
-  "IT Department": ["IT Office, 6th Floor", "Server Room, 6th Floor", "IT Storage, 6th Floor"]
-};
-
-function pickLocation(dept, seed) {
-  const options = DEPT_LOCATIONS[dept] || ["Main Building, Ground Floor"];
-  return options[seed % options.length];
-}
-
-/* Seed dataset — mirrors the design, extended to 245 records */
-function buildSeedData() {
-  const base = [
-    ["Human Resources", "PC-001 (Desktop)", "Juan Dela Cruz", "2026-08-18", "Good", "No issues found.", "HR Office, 3rd Floor"],
-    ["Laboratory", "Epson L5290 (Printer)", "Maria Santos", "2026-08-18", "With Issue", "ADF feeder problem.", "Lab Room 1, Ground Floor"],
-    ["Accounting", "PC-014 (Desktop)", "Mark Anthony", null, "Due", "Scheduled check", "Accounting Office, 3rd Floor"],
-    ["Medical Records", "Epson L120 (Printer)", "Ana Reyes", "2026-08-17", "With Issue", "Not printing properly.", "Records Room A, 2nd Floor"],
-    ["Pharmacy", "PC-003 (Desktop)", "Rhea Morales", "2026-08-17", "Good", "All functioning well.", "Pharmacy Counter, Ground Floor"],
-    ["Nursing Station", "PC-009 (Desktop)", "Jose P. Garcia", "2026-08-16", "For Monitoring", "Slow performance.", "Nurses Station A, 4th Floor"],
-    ["Admitting", "Canon G3010 (Printer)", "Liza Mendoza", "2026-08-16", "Good", "No issues found.", "Admitting Desk, Ground Floor"],
-    ["IT Department", "Server (Production)", "Lito Cabajar", "2026-08-15", "Good", "System normal.", "Server Room, 6th Floor"]
+  const seedData = [
+    { id: 1, dept: "Human Resources", equipment: "PC-001 (Desktop)", location: "HR Office, 3rd Floor", user: "Juan Dela Cruz", date: "2026-08-18", status: "Good", notes: "No issues found." },
+    { id: 2, dept: "Laboratory", equipment: "Epson L5290 (Printer)", location: "Lab Room 1, Ground Floor", user: "Maria Santos", date: "2026-08-18", status: "With Issue", notes: "ADF feeder problem." },
+    { id: 3, dept: "Accounting", equipment: "PC-014 (Desktop)", location: "Accounting Office, 3rd Floor", user: "Mark Anthony", date: "", status: "Due", notes: "Scheduled check" },
+    { id: 4, dept: "Medical Records", equipment: "Epson L120 (Printer)", location: "Records Room A, 2nd Floor", user: "Ana Reyes", date: "2026-08-17", status: "With Issue", notes: "Not printing properly." },
+    { id: 5, dept: "Pharmacy", equipment: "PC-003 (Desktop)", location: "Pharmacy Counter, Ground Floor", user: "Rhea Morales", date: "2026-08-17", status: "Good", notes: "All functioning well." },
+    { id: 6, dept: "Nursing Station", equipment: "PC-009 (Desktop)", location: "Nurses Station A, 4th Floor", user: "Jose P. Garcia", date: "2026-08-16", status: "For Monitoring", notes: "Slow performance." },
+    { id: 7, dept: "Admitting", equipment: "Canon G3010 (Printer)", location: "Admitting Desk, Ground Floor", user: "Liza Mendoza", date: "2026-08-16", status: "Good", notes: "No issues found." },
+    { id: 8, dept: "IT Department", equipment: "Server (Production)", location: "Server Room, 6th Floor", user: "Lito Cabajar", date: "2026-08-15", status: "Good", notes: "System normal." },
   ];
 
-  const equipmentTypes = [
-    "PC (Desktop)", "PC (Laptop)", "Epson L5290 (Printer)", "Canon G3010 (Printer)",
-    "HP LaserJet (Printer)", "Router (Network)", "Switch (Network)", "UPS Unit",
-    "Server (Production)", "Server (Backup)", "Monitor 24in", "Barcode Scanner"
-  ];
-  const users = [
-    "Juan Dela Cruz", "Maria Santos", "Mark Anthony", "Ana Reyes", "Rhea Morales",
-    "Jose P. Garcia", "Liza Mendoza", "Lito Cabajar", "Carmela Sy", "Ramon Torres",
-    "Bea Villanueva", "Noel Ramos", "Grace Uy", "Ferdie Santos", "Ivy Domingo"
-  ];
-  const statuses = ["Good", "Good", "Good", "With Issue", "For Monitoring", "Due"];
-  const notesByStatus = {
-    "Good": ["All functioning well.", "No issues found.", "System normal.", "Passed inspection."],
-    "With Issue": ["ADF feeder problem.", "Not printing properly.", "Random shutdowns.", "Network drops intermittently."],
-    "For Monitoring": ["Slow performance.", "Fan noise, watching closely.", "Minor lag reported."],
-    "Due": ["Scheduled check", "Awaiting technician", "Queued for inspection"]
+  function loadData() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) { /* ignore, fall back to seed */ }
+    return seedData;
+  }
+
+  function saveData() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); } catch (e) { /* storage unavailable */ }
+  }
+
+  let records = loadData();
+  let nextId = Math.max(0, ...records.map(r => r.id)) + 1;
+
+  const DEPT_ICONS = {
+    "Human Resources": iconUsers(),
+    "Laboratory": iconFlask(),
+    "Accounting": iconLayout(),
+    "Medical Records": iconFolder(),
+    "Pharmacy": iconMonitor(),
+    "Nursing Station": iconPulse(),
+    "Admitting": iconUser(),
+    "IT Department": iconServer(),
+  };
+  function defaultDeptIcon() { return iconMonitor(); }
+  function iconUsers(){return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>`;}
+  function iconFlask(){return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 2v6L3 20a1 1 0 0 0 1 2h16a1 1 0 0 0 1-2L15 8V2"/><path d="M9 2h6M8 16h8"/></svg>`;}
+  function iconLayout(){return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>`;}
+  function iconFolder(){return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>`;}
+  function iconMonitor(){return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>`;}
+  function iconPulse(){return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>`;}
+  function iconUser(){return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;}
+  function iconServer(){return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="7" rx="1.5"/><rect x="2" y="14" width="20" height="7" rx="1.5"/><path d="M6 7h.01M6 18h.01"/></svg>`;}
+  const PIN_ICON = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.2"/></svg>`;
+  const EYE_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  const TRASH_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/></svg>`;
+
+  const STATUS_PILL = {
+    "Good": "pill-good",
+    "With Issue": "pill-issue",
+    "Due": "pill-due",
+    "For Monitoring": "pill-monitor",
   };
 
-  const rows = base.map((r, i) => ({ id: i + 1, department: r[0], equipment: r[1], user: r[2], date: r[3], status: r[4], notes: r[5], location: r[6] }));
+  /* ---------------- DOM refs ---------------- */
+  const tableBody = document.getElementById("tableBody");
+  const emptyState = document.getElementById("emptyState");
+  const rowCount = document.getElementById("rowCount");
 
-  let id = rows.length + 1;
-  const totalTarget = 245;
-  while (rows.length < totalTarget) {
-    const dept = DEPARTMENTS[id % DEPARTMENTS.length];
-    const equip = equipmentTypes[id % equipmentTypes.length];
-    const num = String(id).padStart(3, "0");
-    const user = users[id % users.length];
-    const status = statuses[id % statuses.length];
-    const hasDate = status !== "Due";
-    const day = 1 + (id % 28);
-    const month = 1 + (id % 8);
-    const date = hasDate ? `2026-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}` : null;
-    const notesArr = notesByStatus[status];
-    const notes = notesArr[id % notesArr.length];
-    const location = pickLocation(dept, id);
-    rows.push({
-      id,
-      department: dept,
-      equipment: `${equip.split(" (")[0]}-${num} (${equip.split(" (")[1] ?? "Desktop)"}`,
-      user,
-      date,
-      status,
-      notes,
-      location
-    });
-    id++;
+  const searchInput = document.getElementById("searchInput");
+  const filterDept = document.getElementById("filterDept");
+  const filterStatus = document.getElementById("filterStatus");
+  const filterLocation = document.getElementById("filterLocation");
+  const filterDate = document.getElementById("filterDate");
+
+  const statTotal = document.getElementById("statTotal");
+  const statChecked = document.getElementById("statChecked");
+  const statCheckedPct = document.getElementById("statCheckedPct");
+  const statPending = document.getElementById("statPending");
+  const statIssues = document.getElementById("statIssues");
+
+  /* ---------------- helpers ---------------- */
+  function formatDate(iso) {
+    if (!iso) return null;
+    const d = new Date(iso + "T00:00:00");
+    if (isNaN(d)) return iso;
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   }
-  return rows;
-}
 
-/* DATA now comes from Firebase Realtime Database (see firebase-config.js
-   for the `equipmentRef` handle). It starts empty and is populated by the
-   `equipmentRef.on("value", ...)` listener near the bottom of this file,
-   which also keeps it live-synced and re-renders the current page on
-   every change (add/edit/delete from any device). */
-let DATA = [];
-let dataLoaded = false;
+  function populateSelectOptions() {
+    const depts = [...new Set(records.map(r => r.dept))].sort();
+    const locs = [...new Set(records.map(r => r.location))].sort();
 
-/* ---------------- State ---------------- */
-const state = {
-  search: "",
-  department: "All",
-  status: "All",
-  date: "All",
-  location: "All",
-  page: 1,
-  pageSize: 8
-};
+    const currentDept = filterDept.value;
+    filterDept.innerHTML = `<option value="All">All</option>` +
+      depts.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join("");
+    if (depts.includes(currentDept)) filterDept.value = currentDept;
 
-/* ---------------- DOM refs ---------------- */
-const tableBody = document.getElementById("tableBody");
-const searchInput = document.getElementById("searchInput");
-const deptFilter = document.getElementById("deptFilter");
-const statusFilter = document.getElementById("statusFilter");
-const dateFilter = document.getElementById("dateFilter");
-const locationFilter = document.getElementById("locationFilter");
-const showingText = document.getElementById("showingText");
-const paginationEl = document.getElementById("pagination");
+    const currentLoc = filterLocation.value;
+    filterLocation.innerHTML = `<option value="All">All</option>` +
+      locs.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join("");
+    if (locs.includes(currentLoc)) filterLocation.value = currentLoc;
+  }
 
-const statTotal = document.getElementById("statTotal");
-const statChecked = document.getElementById("statChecked");
-const statCheckedPct = document.getElementById("statCheckedPct");
-const statPending = document.getElementById("statPending");
-const statIssues = document.getElementById("statIssues");
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+  }
 
-const viewModalOverlay = document.getElementById("viewModalOverlay");
-const viewModalBody = document.getElementById("viewModalBody");
-const viewModalClose = document.getElementById("viewModalClose");
+  function getFiltered() {
+    const q = searchInput.value.trim().toLowerCase();
+    const dept = filterDept.value;
+    const status = filterStatus.value;
+    const loc = filterLocation.value;
+    const date = filterDate.value;
 
-const addModalOverlay = document.getElementById("addModalOverlay");
-const addModalClose = document.getElementById("addModalClose");
-const addCheckingBtn = document.getElementById("addCheckingBtn");
-const exportBtn = document.getElementById("exportBtn");
-const deleteFilteredBtn = document.getElementById("deleteFilteredBtn");
-const cancelAdd = document.getElementById("cancelAdd");
-const addForm = document.getElementById("addForm");
-const fDept = document.getElementById("fDept");
-const fEquipment = document.getElementById("fEquipment");
-const fLocation = document.getElementById("fLocation");
-const fUser = document.getElementById("fUser");
-const fDate = document.getElementById("fDate");
-const fStatus = document.getElementById("fStatus");
-const fNotes = document.getElementById("fNotes");
+    return records.filter(r => {
+      if (dept !== "All" && r.dept !== dept) return false;
+      if (status !== "All" && r.status !== status) return false;
+      if (loc !== "All" && r.location !== loc) return false;
+      if (date && r.date !== date) return false;
+      if (q) {
+        const hay = `${r.dept} ${r.equipment} ${r.location} ${r.user} ${r.notes}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    }).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  }
 
-const toast = document.getElementById("toast");
+  /* ---------------- render ---------------- */
+  function render() {
+    populateSelectOptions();
+    const filtered = getFiltered();
 
-/* ---------------- Init filters ---------------- */
-function initFilters() {
-  DEPARTMENTS.forEach(d => {
-    const opt = document.createElement("option");
-    opt.value = d;
-    opt.textContent = d;
-    deptFilter.appendChild(opt);
-
-    const fOpt = document.createElement("option");
-    fOpt.value = d;
-    fOpt.textContent = d;
-    fDept.appendChild(fOpt);
-  });
-
-  Object.keys(STATUS_MAP).forEach(s => {
-    const opt = document.createElement("option");
-    opt.value = s;
-    opt.textContent = s;
-    statusFilter.appendChild(opt);
-  });
-
-  const allLocations = Array.from(new Set(Object.values(DEPT_LOCATIONS).flat())).sort();
-  allLocations.forEach(loc => {
-    const opt = document.createElement("option");
-    opt.value = loc;
-    opt.textContent = loc;
-    locationFilter.appendChild(opt);
-  });
-}
-
-/* ---------------- Formatting helpers ---------------- */
-function formatDate(iso) {
-  if (!iso) return "\u2013";
-  const d = new Date(iso + "T00:00:00");
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-function statusClass(status) {
-  return STATUS_MAP[status] || "status-due";
-}
-
-function deptIcon(dept) {
-  return DEPT_ICON[dept] || { cls: "dept-default", path: '<rect x="3" y="4" width="18" height="12" rx="1.5"/>' };
-}
-
-/* ---------------- Filtering ---------------- */
-function getFiltered() {
-  const q = state.search.trim().toLowerCase();
-  return DATA.filter(row => {
-    if (state.department !== "All" && row.department !== state.department) return false;
-    if (state.status !== "All" && row.status !== state.status) return false;
-    if (state.date !== "All" && row.date !== state.date) return false;
-    if (state.location !== "All" && row.location !== state.location) return false;
-    if (q) {
-      const hay = `${row.department} ${row.equipment} ${row.user} ${row.notes} ${row.location}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
-  });
-}
-
-/* ---------------- Rendering ---------------- */
-function render() {
-  const filtered = getFiltered();
-  const totalPages = Math.max(1, Math.ceil(filtered.length / state.pageSize));
-  if (state.page > totalPages) state.page = totalPages;
-
-  const start = (state.page - 1) * state.pageSize;
-  const pageRows = filtered.slice(start, start + state.pageSize);
-
-  tableBody.innerHTML = "";
-
-  if (pageRows.length === 0) {
-    const tr = document.createElement("tr");
-    tr.className = "empty-row";
-    tr.innerHTML = `<td colspan="8">No equipment records match your filters.</td>`;
-    tableBody.appendChild(tr);
-  } else {
-    pageRows.forEach(row => {
-      const icon = deptIcon(row.department);
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
+    tableBody.innerHTML = filtered.map(r => `
+      <tr data-id="${r.id}">
         <td>
-          <div class="dept-cell">
-            <span class="dept-icon ${icon.cls}"><svg viewBox="0 0 24 24">${icon.path}</svg></span>
-            ${row.department}
+          <div class="cell-dept">
+            <span class="dept-icon">${DEPT_ICONS[r.dept] || defaultDeptIcon()}</span>
+            ${escapeHtml(r.dept)}
           </div>
         </td>
-        <td>${row.equipment}</td>
-        <td class="location-cell">
-          <svg class="pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.7-6.5-11A6.5 6.5 0 0 1 12 3.5 6.5 6.5 0 0 1 18.5 10c0 5.3-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.2"/></svg>
-          ${escapeHtml(row.location)}
-        </td>
-        <td>${row.user}</td>
-        <td>${row.date ? formatDate(row.date) : '<span class="text-muted">\u2013</span>'}</td>
-        <td><span class="status-pill ${statusClass(row.status)}">${row.status}</span></td>
-        <td class="notes-cell" title="${escapeHtml(row.notes)}">${escapeHtml(row.notes)}</td>
-        <td class="td-action">
-          <div class="action-btns">
-            <button class="icon-btn" data-action="view" data-id="${row.id}" aria-label="View">
-              <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
-            </button>
-            <button class="icon-btn icon-btn-danger" data-action="delete" data-id="${row.id}" aria-label="Delete">
-              <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13M10 11v6M14 11v6"/></svg>
-            </button>
+        <td>${escapeHtml(r.equipment)}</td>
+        <td><span class="cell-location">${PIN_ICON}${escapeHtml(r.location)}</span></td>
+        <td>${escapeHtml(r.user)}</td>
+        <td>${r.date ? formatDate(r.date) : '<span class="cell-dash">—</span>'}</td>
+        <td><span class="pill ${STATUS_PILL[r.status] || "pill-due"}">${escapeHtml(r.status)}</span></td>
+        <td class="cell-notes">${escapeHtml(r.notes || "")}</td>
+        <td class="col-action">
+          <div class="row-actions">
+            <button class="icon-btn view-btn" title="View" aria-label="View">${EYE_ICON}</button>
+            <button class="icon-btn danger delete-btn" title="Delete" aria-label="Delete">${TRASH_ICON}</button>
           </div>
         </td>
-      `;
-      tableBody.appendChild(tr);
-    });
+      </tr>
+    `).join("");
+
+    emptyState.hidden = filtered.length !== 0;
+    rowCount.textContent = `${filtered.length} record${filtered.length === 1 ? "" : "s"}`;
+
+    renderStats();
   }
 
-  // Showing text
-  if (filtered.length === 0) {
-    showingText.textContent = "Showing 0 entries";
-  } else {
-    const from = start + 1;
-    const to = Math.min(start + state.pageSize, filtered.length);
-    showingText.textContent = `Showing ${from} to ${to} of ${filtered.length} entries`;
+  function renderStats() {
+    const total = records.length;
+    const checked = records.filter(r => !!r.date).length;
+    const pending = records.filter(r => !r.date || r.status === "Due").length;
+    const issues = records.filter(r => r.status === "With Issue").length;
+    const pct = total ? ((checked / total) * 100).toFixed(2) : "0.00";
+
+    statTotal.textContent = total;
+    statChecked.textContent = checked;
+    statCheckedPct.textContent = `${pct}% of total`;
+    statPending.textContent = pending;
+    statIssues.textContent = issues;
   }
 
-  renderPagination(totalPages);
-  renderStats();
-}
+  /* ---------------- events: filters ---------------- */
+  [searchInput, filterDept, filterStatus, filterLocation, filterDate].forEach(el => {
+    el.addEventListener("input", render);
+    el.addEventListener("change", render);
+  });
 
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str ?? "";
-  return div.innerHTML;
-}
+  /* ---------------- row actions ---------------- */
+  tableBody.addEventListener("click", (e) => {
+    const tr = e.target.closest("tr");
+    if (!tr) return;
+    const id = Number(tr.dataset.id);
+    const record = records.find(r => r.id === id);
+    if (!record) return;
 
-function renderPagination(totalPages) {
-  paginationEl.innerHTML = "";
-
-  const prevBtn = document.createElement("button");
-  prevBtn.className = "page-btn";
-  prevBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>`;
-  prevBtn.disabled = state.page === 1;
-  prevBtn.addEventListener("click", () => { state.page--; render(); });
-  paginationEl.appendChild(prevBtn);
-
-  const pages = getPageList(state.page, totalPages);
-  pages.forEach(p => {
-    if (p === "...") {
-      const span = document.createElement("span");
-      span.className = "page-ellipsis";
-      span.textContent = "...";
-      paginationEl.appendChild(span);
-    } else {
-      const btn = document.createElement("button");
-      btn.className = "page-btn" + (p === state.page ? " active" : "");
-      btn.textContent = p;
-      btn.addEventListener("click", () => { state.page = p; render(); });
-      paginationEl.appendChild(btn);
+    if (e.target.closest(".view-btn")) openViewModal(record);
+    if (e.target.closest(".delete-btn")) {
+      if (confirm(`Delete checking record for "${record.equipment}"?`)) {
+        records = records.filter(r => r.id !== id);
+        saveData();
+        render();
+      }
     }
   });
 
-  const nextBtn = document.createElement("button");
-  nextBtn.className = "page-btn";
-  nextBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>`;
-  nextBtn.disabled = state.page === totalPages;
-  nextBtn.addEventListener("click", () => { state.page++; render(); });
-  paginationEl.appendChild(nextBtn);
-}
-
-function getPageList(current, total) {
-  const delta = 1;
-  const range = [];
-  for (let i = 1; i <= total; i++) {
-    if (i === 1 || i === total || (i >= current - delta && i <= current + delta)) {
-      range.push(i);
-    }
-  }
-  const withDots = [];
-  let prev = 0;
-  range.forEach(p => {
-    if (prev && p - prev > 1) withDots.push("...");
-    withDots.push(p);
-    prev = p;
-  });
-  return withDots;
-}
-
-function renderStats() {
-  const total = DATA.length;
-  const checked = DATA.filter(r => r.status === "Good" || r.status === "For Monitoring" || (r.status === "With Issue")).length + 0;
-  // Checked = anything that has been actually checked (has a date)
-  const checkedCount = DATA.filter(r => r.date !== null).length;
-  const pending = DATA.filter(r => r.status === "Due").length;
-  const issues = DATA.filter(r => r.status === "With Issue").length;
-
-  statTotal.textContent = total;
-  statChecked.textContent = checkedCount;
-  statCheckedPct.textContent = `${((checkedCount / total) * 100).toFixed(2)}% of total`;
-  statPending.textContent = pending;
-  statIssues.textContent = issues;
-}
-
-/* ---------------- Events: filters ---------------- */
-let searchTimer;
-searchInput.addEventListener("input", (e) => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    state.search = e.target.value;
-    state.page = 1;
+  /* ---------------- Delete Filtered ---------------- */
+  document.getElementById("deleteFilteredBtn").addEventListener("click", () => {
+    const filtered = getFiltered();
+    if (filtered.length === 0) { alert("No records match the current filters."); return; }
+    if (!confirm(`Delete ${filtered.length} filtered record${filtered.length === 1 ? "" : "s"}? This cannot be undone.`)) return;
+    const idsToDelete = new Set(filtered.map(r => r.id));
+    records = records.filter(r => !idsToDelete.has(r.id));
+    saveData();
     render();
-  }, 180);
-});
-
-deptFilter.addEventListener("change", (e) => {
-  state.department = e.target.value;
-  state.page = 1;
-  render();
-});
-
-statusFilter.addEventListener("change", (e) => {
-  state.status = e.target.value;
-  state.page = 1;
-  render();
-});
-
-locationFilter.addEventListener("change", (e) => {
-  state.location = e.target.value;
-  state.page = 1;
-  render();
-});
-
-dateFilter.addEventListener("click", () => {
-  // simple prompt-based date picker fallback (native calendar substitute)
-  const picker = document.createElement("input");
-  picker.type = "date";
-  picker.style.position = "fixed";
-  picker.style.opacity = "0";
-  picker.style.pointerEvents = "none";
-  document.body.appendChild(picker);
-  picker.addEventListener("change", () => {
-    if (picker.value) {
-      state.date = picker.value;
-      dateFilter.value = formatDate(picker.value);
-    } else {
-      state.date = "All";
-      dateFilter.value = "";
-    }
-    state.page = 1;
-    render();
-    picker.remove();
-  });
-  picker.click();
-  if (typeof picker.showPicker === "function") {
-    try { picker.showPicker(); } catch (_) {}
-  }
-});
-
-/* ---------------- View modal ---------------- */
-let currentViewId = null;
-
-function openViewModal(id) {
-  const row = DATA.find(r => r.id === id);
-  if (!row) return;
-  currentViewId = id;
-  viewModalBody.innerHTML = `
-    <div class="detail-row"><span>Department</span><span>${escapeHtml(row.department)}</span></div>
-    <div class="detail-row"><span>Equipment</span><span>${escapeHtml(row.equipment)}</span></div>
-    <div class="detail-row"><span>Location</span><span>${escapeHtml(row.location)}</span></div>
-    <div class="detail-row"><span>User</span><span>${escapeHtml(row.user)}</span></div>
-    <div class="detail-row"><span>Date Checked</span><span>${row.date ? formatDate(row.date) : "\u2013"}</span></div>
-    <div class="detail-row"><span>Status</span><span><span class="status-pill ${statusClass(row.status)}">${row.status}</span></span></div>
-    <div class="detail-row"><span>Notes</span><span>${escapeHtml(row.notes)}</span></div>
-  `;
-  viewModalOverlay.classList.add("open");
-}
-
-function deleteRecord(id) {
-  return equipmentRef.child(id).remove();
-}
-
-tableBody.addEventListener("click", (e) => {
-  const btn = e.target.closest(".icon-btn");
-  if (!btn) return;
-  const id = btn.dataset.id;
-  if (btn.dataset.action === "view") {
-    openViewModal(id);
-  } else if (btn.dataset.action === "delete") {
-    const row = DATA.find(r => r.id === id);
-    const label = row ? `${row.equipment} (${row.department})` : "this record";
-    if (!confirm(`Delete ${label}? This can't be undone.`)) return;
-    btn.disabled = true;
-    deleteRecord(id)
-      .then(() => showToast("Equipment checking deleted."))
-      .catch((err) => {
-        console.error("Delete failed:", err);
-        showToast("Couldn't delete — check your connection and try again.");
-        btn.disabled = false;
-      });
-  }
-});
-
-viewModalClose.addEventListener("click", () => viewModalOverlay.classList.remove("open"));
-document.getElementById("viewModalCloseBtn").addEventListener("click", () => viewModalOverlay.classList.remove("open"));
-viewModalOverlay.addEventListener("click", (e) => {
-  if (e.target === viewModalOverlay) viewModalOverlay.classList.remove("open");
-});
-
-document.getElementById("viewModalDelete").addEventListener("click", (e) => {
-  if (!currentViewId) return;
-  const row = DATA.find(r => r.id === currentViewId);
-  const label = row ? `${row.equipment} (${row.department})` : "this record";
-  if (!confirm(`Delete ${label}? This can't be undone.`)) return;
-  const delBtn = e.currentTarget;
-  delBtn.disabled = true;
-  deleteRecord(currentViewId)
-    .then(() => {
-      viewModalOverlay.classList.remove("open");
-      showToast("Equipment checking deleted.");
-    })
-    .catch((err) => {
-      console.error("Delete failed:", err);
-      showToast("Couldn't delete — check your connection and try again.");
-    })
-    .finally(() => { delBtn.disabled = false; });
-});
-
-
-/* ---------------- Add Checking modal ---------------- */
-function openAddModal() {
-  addForm.reset();
-  fDate.valueAsDate = new Date();
-  fLocation.value = (DEPT_LOCATIONS[fDept.value] || [""])[0];
-  addModalOverlay.classList.add("open");
-}
-
-fDept.addEventListener("change", () => {
-  const options = DEPT_LOCATIONS[fDept.value];
-  if (options && options.length) fLocation.value = options[0];
-});
-
-addCheckingBtn.addEventListener("click", openAddModal);
-addModalClose.addEventListener("click", () => addModalOverlay.classList.remove("open"));
-cancelAdd.addEventListener("click", () => addModalOverlay.classList.remove("open"));
-addModalOverlay.addEventListener("click", (e) => {
-  if (e.target === addModalOverlay) addModalOverlay.classList.remove("open");
-});
-
-addForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const newRow = {
-    department: fDept.value,
-    equipment: fEquipment.value.trim(),
-    location: fLocation.value.trim() || "Location not specified",
-    user: fUser.value.trim(),
-    date: fDate.value || null,
-    status: fStatus.value,
-    notes: fNotes.value.trim() || "No notes provided.",
-    createdAt: firebase.database.ServerValue.TIMESTAMP
-  };
-
-  const submitBtn = addForm.querySelector(".btn-primary");
-  if (submitBtn) submitBtn.disabled = true;
-
-  equipmentRef.push(newRow)
-    .then(() => {
-      addModalOverlay.classList.remove("open");
-      state.page = 1;
-      showToast("Equipment checking added successfully.");
-      // The live listener below re-renders automatically once Firebase
-      // confirms the write, so no manual render() call is needed here.
-    })
-    .catch((err) => {
-      console.error("Failed to save to Firebase:", err);
-      showToast("Couldn't save — check your connection and try again.");
-    })
-    .finally(() => {
-      if (submitBtn) submitBtn.disabled = false;
-    });
-});
-
-/* ---------------- Toast ---------------- */
-let toastTimer;
-function showToast(msg) {
-  toast.textContent = msg;
-  toast.classList.add("show");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove("show"), 2400);
-}
-
-/* ---------------- Export filtered (CSV) ---------------- */
-function csvEscape(val) {
-  const s = String(val ?? "");
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-function exportFilteredCsv() {
-  const rows = getFiltered();
-  if (!rows.length) {
-    showToast("No records match the current filters.");
-    return;
-  }
-
-  const headers = ["Department", "Equipment", "Location", "User", "Date Checked", "Status", "Notes"];
-  const lines = [headers.join(",")];
-  rows.forEach(r => {
-    lines.push([
-      r.department, r.equipment, r.location, r.user,
-      r.date ? formatDate(r.date) : "",
-      r.status, r.notes
-    ].map(csvEscape).join(","));
   });
 
-  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  const stamp = new Date().toISOString().slice(0, 10);
-  a.href = url;
-  a.download = `equipment-checking_${stamp}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-
-  showToast(`Exported ${rows.length} record${rows.length === 1 ? "" : "s"}.`);
-}
-
-exportBtn.addEventListener("click", exportFilteredCsv);
-
-/* ---------------- Delete all filtered ---------------- */
-function deleteFilteredRecords() {
-  const rows = getFiltered();
-  if (!rows.length) {
-    showToast("No records match the current filters.");
-    return;
-  }
-
-  const confirmMsg = `Delete ${rows.length} record${rows.length === 1 ? "" : "s"} matching the current filters? This can't be undone.`;
-  if (!confirm(confirmMsg)) return;
-
-  deleteFilteredBtn.disabled = true;
-  const updates = {};
-  rows.forEach(r => { updates[r.id] = null; });
-
-  equipmentRef.update(updates)
-    .then(() => {
-      state.page = 1;
-      showToast(`Deleted ${rows.length} record${rows.length === 1 ? "" : "s"}.`);
-    })
-    .catch((err) => {
-      console.error("Bulk delete failed:", err);
-      showToast("Couldn't delete — check your connection and try again.");
-    })
-    .finally(() => {
-      deleteFilteredBtn.disabled = false;
-    });
-}
-
-deleteFilteredBtn.addEventListener("click", deleteFilteredRecords);
-
-/* =========================================================
-   Navigation — page switching & content for every nav item
-   ========================================================= */
-
-const PAGE_TITLES = {
-  "dashboard": "Dashboard",
-  "equipment-all": "All Equipment",
-  "equipment-categories": "Equipment Categories",
-  "schedule": "Schedule",
-  "checking": "Scheduled IT Equipment Checking",
-  "issues": "Issues / Service",
-  "reports-checking": "Checking Summary Report",
-  "reports-department": "Department Summary Report",
-  "users": "System Users",
-  "settings": "Settings"
-};
-
-function statCardsMarkup() {
-  const total = DATA.length;
-  const checkedCount = DATA.filter(r => r.date !== null).length;
-  const pending = DATA.filter(r => r.status === "Due").length;
-  const issues = DATA.filter(r => r.status === "With Issue").length;
-  const pct = total ? ((checkedCount / total) * 100).toFixed(2) : "0.00";
-
-  return `
-    <div class="stat-card">
-      <div class="stat-icon blue"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg></div>
-      <div class="stat-body">
-        <p class="stat-label">Total Equipment</p>
-        <p class="stat-value">${total}</p>
-        <span class="stat-sub text-muted">Across all departments</span>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon green"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg></div>
-      <div class="stat-body">
-        <p class="stat-label">Checked</p>
-        <p class="stat-value">${checkedCount}</p>
-        <span class="stat-sub good">${pct}% of total</span>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon amber"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg></div>
-      <div class="stat-body">
-        <p class="stat-label">Pending / Due</p>
-        <p class="stat-value">${pending}</p>
-        <span class="stat-sub amber-text">To be checked</span>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon red"><svg viewBox="0 0 24 24"><path d="M12 3L2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></svg></div>
-      <div class="stat-body">
-        <p class="stat-label">With Issues</p>
-        <p class="stat-value">${issues}</p>
-        <span class="stat-sub red-text">Need attention</span>
-      </div>
-    </div>
-  `;
-}
-
-function renderDashboardPage() {
-  document.getElementById("dashStats").innerHTML = statCardsMarkup();
-
-  const recent = DATA.filter(r => r.date).slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6);
-  const recentList = document.getElementById("recentChecksList");
-  recentList.innerHTML = recent.length
-    ? recent.map(r => `
-      <div class="mini-row">
-        <div class="mini-row-main">
-          <div class="mini-row-title">${escapeHtml(r.equipment)} — ${escapeHtml(r.department)}</div>
-          <div class="mini-row-sub">${escapeHtml(r.location)} · ${escapeHtml(r.user)} · ${formatDate(r.date)}</div>
-        </div>
-        <span class="status-pill ${statusClass(r.status)}">${r.status}</span>
-      </div>`).join("")
-    : '<div class="mini-empty">No checks recorded yet.</div>';
-
-  const issueCounts = {};
-  DATA.forEach(r => { if (r.status === "With Issue") issueCounts[r.department] = (issueCounts[r.department] || 0) + 1; });
-  const ranked = Object.entries(issueCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const attentionList = document.getElementById("attentionList");
-  attentionList.innerHTML = ranked.length
-    ? ranked.map(([dept, count]) => `
-      <div class="mini-row">
-        <div class="mini-row-main">
-          <div class="mini-row-title">${escapeHtml(dept)}</div>
-          <div class="mini-row-sub">${count} equipment flagged with issues</div>
-        </div>
-        <span class="mini-row-badge red-text">${count}</span>
-      </div>`).join("")
-    : '<div class="mini-empty">No open issues right now.</div>';
-}
-
-function renderEquipmentAllPage() {
-  const cap = 60;
-  const capped = DATA.slice(0, cap);
-  document.getElementById("equipAllBody").innerHTML = capped.map(r => {
-    const icon = deptIcon(r.department);
-    return `<tr>
-      <td><div class="dept-cell"><span class="dept-icon ${icon.cls}"><svg viewBox="0 0 24 24">${icon.path}</svg></span>${escapeHtml(r.department)}</div></td>
-      <td>${escapeHtml(r.equipment)}</td>
-      <td class="location-cell"><svg class="pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.7-6.5-11A6.5 6.5 0 0 1 12 3.5 6.5 6.5 0 0 1 18.5 10c0 5.3-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.2"/></svg>${escapeHtml(r.location)}</td>
-      <td>${escapeHtml(r.user)}</td>
-      <td><span class="status-pill ${statusClass(r.status)}">${r.status}</span></td>
-    </tr>`;
-  }).join("");
-  document.getElementById("equipAllCount").textContent = `${DATA.length} total`;
-  document.getElementById("equipAllShowing").textContent = `Showing ${Math.min(cap, DATA.length)} of ${DATA.length} entries`;
-}
-
-function renderCategoriesPage() {
-  document.getElementById("categoryStats").innerHTML = DEPARTMENTS.map(dept => {
-    const items = DATA.filter(r => r.department === dept);
-    const icon = deptIcon(dept);
-    const issueCount = items.filter(i => i.status === "With Issue").length;
-    return `<div class="stat-card">
-      <div class="stat-icon ${icon.cls}"><svg viewBox="0 0 24 24">${icon.path}</svg></div>
-      <div class="stat-body">
-        <p class="stat-label">${escapeHtml(dept)}</p>
-        <p class="stat-value">${items.length}</p>
-        <span class="stat-sub ${issueCount ? "red-text" : "text-muted"}">${issueCount} with issues</span>
-      </div>
-    </div>`;
-  }).join("");
-}
-
-function renderSchedulePage() {
-  const year = 2026, month = 7; // August 2026
-  const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  document.getElementById("calendarLabel").textContent = `${monthNames[month]} ${year}`;
-
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const todayDate = 18;
-
-  const activeDays = new Set();
-  DATA.forEach(r => {
-    if (r.date) {
-      const d = new Date(r.date + "T00:00:00");
-      if (d.getFullYear() === year && d.getMonth() === month) activeDays.add(d.getDate());
-    }
+  /* ---------------- Export ---------------- */
+  document.getElementById("exportBtn").addEventListener("click", () => {
+    const filtered = getFiltered();
+    const headers = ["Department", "Equipment", "Location", "User", "Date Checked", "Status", "Notes"];
+    const rows = filtered.map(r => [r.dept, r.equipment, r.location, r.user, r.date ? formatDate(r.date) : "", r.status, r.notes || ""]);
+    const csv = [headers, ...rows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "equipment-checking-export.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   });
 
-  const dow = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-  let html = dow.map(d => `<div class="cal-dow">${d}</div>`).join("");
-  for (let i = 0; i < firstDay; i++) html += `<div class="cal-day empty"></div>`;
-  for (let day = 1; day <= daysInMonth; day++) {
-    const classes = ["cal-day"];
-    if (day === todayDate) classes.push("today");
-    else if (activeDays.has(day)) classes.push("has-due");
-    html += `<div class="${classes.join(" ")}">${day}</div>`;
-  }
-  document.getElementById("calendarGrid").innerHTML = html;
+  /* ---------------- Add / Edit modal ---------------- */
+  const modalOverlay = document.getElementById("modalOverlay");
+  const modalTitle = document.getElementById("modalTitle");
+  const checkingForm = document.getElementById("checkingForm");
+  const recordIdField = document.getElementById("recordId");
+  const fDept = document.getElementById("fDept");
+  const fEquipment = document.getElementById("fEquipment");
+  const fLocation = document.getElementById("fLocation");
+  const fUser = document.getElementById("fUser");
+  const fDate = document.getElementById("fDate");
+  const fStatus = document.getElementById("fStatus");
+  const fNotes = document.getElementById("fNotes");
 
-  const dueItems = DATA.filter(r => r.status === "Due");
-  const dueList = document.getElementById("dueList");
-  if (!dueItems.length) {
-    dueList.innerHTML = '<div class="mini-empty">Nothing due right now.</div>';
-  } else {
-    const shown = dueItems.slice(0, 20);
-    let listHtml = shown.map(r => `
-      <div class="mini-row">
-        <div class="mini-row-main">
-          <div class="mini-row-title">${escapeHtml(r.equipment)} — ${escapeHtml(r.department)}</div>
-          <div class="mini-row-sub">Assigned to ${escapeHtml(r.user)}</div>
-        </div>
-        <span class="status-pill status-due">Due</span>
-      </div>`).join("");
-    if (dueItems.length > shown.length) {
-      listHtml += `<div class="mini-empty">+ ${dueItems.length - shown.length} more equipment due for checking.</div>`;
-    }
-    dueList.innerHTML = listHtml;
-  }
-}
-
-function renderIssuesPage() {
-  document.getElementById("issuesStats").innerHTML = statCardsMarkup();
-  const issues = DATA.filter(r => r.status === "With Issue");
-  document.getElementById("ticketGrid").innerHTML = issues.length
-    ? issues.map(r => `
-      <div class="ticket-card">
-        <div class="ticket-card-head">
-          <div>
-            <div class="ticket-equip">${escapeHtml(r.equipment)}</div>
-            <div class="ticket-dept">${escapeHtml(r.department)}</div>
-          </div>
-          <span class="status-pill status-issue">With Issue</span>
-        </div>
-        <p class="ticket-location"><svg class="pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.7-6.5-11A6.5 6.5 0 0 1 12 3.5 6.5 6.5 0 0 1 18.5 10c0 5.3-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.2"/></svg>${escapeHtml(r.location)}</p>
-        <p class="ticket-notes">${escapeHtml(r.notes)}</p>
-        <div class="ticket-meta">
-          <span>${escapeHtml(r.user)}</span>
-          <span>${r.date ? formatDate(r.date) : "\u2013"}</span>
-        </div>
-      </div>`).join("")
-    : '<div class="mini-empty">No open tickets. Nice work.</div>';
-}
-
-function renderReportsCheckingPage() {
-  document.getElementById("reportsCheckingStats").innerHTML = statCardsMarkup();
-  const total = DATA.length;
-  const counts = { "Good": 0, "With Issue": 0, "For Monitoring": 0, "Due": 0 };
-  DATA.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
-  const barMap = [["Good", "good"], ["With Issue", "issue"], ["For Monitoring", "monitoring"], ["Due", "due"]];
-  document.getElementById("statusBarList").innerHTML = barMap.map(([label, cls]) => {
-    const count = counts[label] || 0;
-    const pct = total ? ((count / total) * 100).toFixed(1) : "0.0";
-    return `<div>
-      <div class="bar-row-top"><span>${label}</span><span>${count} · ${pct}%</span></div>
-      <div class="bar-track"><div class="bar-fill ${cls}" style="width:${pct}%"></div></div>
-    </div>`;
-  }).join("");
-}
-
-function renderReportsDepartmentPage() {
-  document.getElementById("deptSummaryBody").innerHTML = DEPARTMENTS.map(dept => {
-    const items = DATA.filter(r => r.department === dept);
-    const good = items.filter(r => r.status === "Good").length;
-    const issue = items.filter(r => r.status === "With Issue").length;
-    const monitor = items.filter(r => r.status === "For Monitoring").length;
-    const due = items.filter(r => r.status === "Due").length;
-    return `<tr>
-      <td>${escapeHtml(dept)}</td>
-      <td>${items.length}</td>
-      <td>${good}</td>
-      <td>${issue}</td>
-      <td>${monitor}</td>
-      <td>${due}</td>
-    </tr>`;
-  }).join("");
-}
-
-function renderUsersPage() {
-  const map = new Map();
-  DATA.forEach(r => {
-    if (!map.has(r.user)) map.set(r.user, { department: r.department, count: 0, lastDate: null });
-    const entry = map.get(r.user);
-    entry.count++;
-    if (r.date && (!entry.lastDate || r.date > entry.lastDate)) entry.lastDate = r.date;
-  });
-  const rows = Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  document.getElementById("usersCount").textContent = `${rows.length} users`;
-  document.getElementById("usersBody").innerHTML = rows.map(([name, info]) => `
-    <tr>
-      <td>${escapeHtml(name)}</td>
-      <td>${escapeHtml(info.department)}</td>
-      <td>${info.count}</td>
-      <td>${info.lastDate ? formatDate(info.lastDate) : "\u2013"}</td>
-    </tr>`).join("");
-}
-
-const PAGE_RENDERERS = {
-  "dashboard": renderDashboardPage,
-  "equipment-all": renderEquipmentAllPage,
-  "equipment-categories": renderCategoriesPage,
-  "schedule": renderSchedulePage,
-  "checking": () => render(),
-  "issues": renderIssuesPage,
-  "reports-checking": renderReportsCheckingPage,
-  "reports-department": renderReportsDepartmentPage,
-  "users": renderUsersPage,
-  "settings": () => {}
-};
-
-const pageTitleEl = document.getElementById("pageTitle");
-
-function switchPage(page) {
-  if (!PAGE_TITLES[page]) return;
-
-  document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
-  const target = document.getElementById("page-" + page);
-  if (target) target.classList.add("active");
-
-  pageTitleEl.textContent = PAGE_TITLES[page];
-
-  document.querySelectorAll(".nav-item[data-page], .sub-item[data-page]").forEach(el => {
-    el.classList.toggle("active", el.dataset.page === page);
-  });
-
-  document.querySelectorAll(".nav-group-toggle").forEach(t => t.classList.remove("open"));
-  document.querySelectorAll(".submenu").forEach(s => s.classList.remove("open"));
-  const activeSub = document.querySelector(`.sub-item[data-page="${page}"]`);
-  if (activeSub) {
-    const group = activeSub.closest(".nav-group");
-    group.querySelector(".nav-group-toggle").classList.add("open");
-    group.querySelector(".submenu").classList.add("open");
+  function openAddModal() {
+    modalTitle.textContent = "Add Equipment Checking";
+    checkingForm.reset();
+    recordIdField.value = "";
+    fDate.value = new Date().toISOString().slice(0, 10);
+    modalOverlay.hidden = false;
+    fDept.focus();
   }
 
-  const renderer = PAGE_RENDERERS[page];
-  if (renderer) renderer();
-
-  if (window.innerWidth <= 900) {
-    document.getElementById("sidebar").classList.remove("open");
+  function closeAddModal() {
+    modalOverlay.hidden = true;
   }
 
-  window.scrollTo({ top: 0, behavior: "auto" });
-}
+  document.getElementById("addBtn").addEventListener("click", openAddModal);
+  document.getElementById("modalClose").addEventListener("click", closeAddModal);
+  document.getElementById("cancelBtn").addEventListener("click", closeAddModal);
+  modalOverlay.addEventListener("click", (e) => { if (e.target === modalOverlay) closeAddModal(); });
 
-document.querySelectorAll(".stat-link[data-page]").forEach(link => {
-  link.addEventListener("click", (e) => {
+  checkingForm.addEventListener("submit", (e) => {
     e.preventDefault();
-    switchPage(link.dataset.page);
+    const newRecord = {
+      id: nextId++,
+      dept: fDept.value.trim(),
+      equipment: fEquipment.value.trim(),
+      location: fLocation.value.trim(),
+      user: fUser.value.trim(),
+      date: fDate.value || "",
+      status: fStatus.value,
+      notes: fNotes.value.trim(),
+    };
+    records.unshift(newRecord);
+    saveData();
+    render();
+    closeAddModal();
   });
-});
 
-document.getElementById("navRoot").addEventListener("click", (e) => {
-  const groupToggle = e.target.closest(".nav-group-toggle");
-  if (groupToggle) {
-    const group = groupToggle.closest(".nav-group");
-    const submenu = group.querySelector(".submenu");
-    const isOpen = groupToggle.classList.contains("open");
+  /* ---------------- View modal ---------------- */
+  const viewOverlay = document.getElementById("viewOverlay");
+  const detailList = document.getElementById("detailList");
 
-    document.querySelectorAll(".nav-group-toggle").forEach(t => t.classList.remove("open"));
-    document.querySelectorAll(".submenu").forEach(s => s.classList.remove("open"));
-
-    if (!isOpen) {
-      groupToggle.classList.add("open");
-      submenu.classList.add("open");
-    }
-    return;
+  function openViewModal(record) {
+    detailList.innerHTML = `
+      <div><dt>Department</dt><dd>${escapeHtml(record.dept)}</dd></div>
+      <div><dt>Equipment</dt><dd>${escapeHtml(record.equipment)}</dd></div>
+      <div><dt>Location</dt><dd>${escapeHtml(record.location)}</dd></div>
+      <div><dt>User</dt><dd>${escapeHtml(record.user)}</dd></div>
+      <div><dt>Date Checked</dt><dd>${record.date ? formatDate(record.date) : "—"}</dd></div>
+      <div><dt>Status</dt><dd><span class="pill ${STATUS_PILL[record.status] || "pill-due"}">${escapeHtml(record.status)}</span></dd></div>
+      <div><dt>Notes</dt><dd>${escapeHtml(record.notes || "—")}</dd></div>
+    `;
+    viewOverlay.hidden = false;
   }
+  document.getElementById("viewClose").addEventListener("click", () => { viewOverlay.hidden = true; });
+  viewOverlay.addEventListener("click", (e) => { if (e.target === viewOverlay) viewOverlay.hidden = true; });
 
-  const navBtn = e.target.closest("[data-page]");
-  if (navBtn) {
-    switchPage(navBtn.dataset.page);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { closeAddModal(); viewOverlay.hidden = true; }
+  });
+
+  /* ---------------- Sidebar toggles ---------------- */
+  function wireToggle(btnId, subId) {
+    const btn = document.getElementById(btnId);
+    const sub = document.getElementById(subId);
+    btn.setAttribute("aria-expanded", "false");
+    btn.addEventListener("click", () => {
+      const isOpen = sub.classList.toggle("open");
+      btn.setAttribute("aria-expanded", String(isOpen));
+    });
   }
-});
+  wireToggle("equipmentToggle", "equipmentSub");
+  wireToggle("reportsToggle", "reportsSub");
 
-/* ---------------- Sidebar toggle (mobile + desktop) ---------------- */
-const sidebar = document.getElementById("sidebar");
-const hamburger = document.getElementById("hamburger");
-
-hamburger.addEventListener("click", () => {
-  if (window.innerWidth <= 900) {
+  const hamburger = document.getElementById("hamburger");
+  const sidebar = document.querySelector(".sidebar");
+  hamburger.addEventListener("click", () => {
     sidebar.classList.toggle("open");
-  } else {
     sidebar.classList.toggle("collapsed");
-  }
-});
+  });
 
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    viewModalOverlay.classList.remove("open");
-    addModalOverlay.classList.remove("open");
-  }
-});
-
-/* ---------------- Init ---------------- */
-initFilters();
-tableBody.innerHTML = '<tr class="empty-row"><td colspan="8">Loading equipment records…</td></tr>';
-
-/* ---------------- Firebase live sync ----------------
-   Loads equipment-checking records from Realtime Database and keeps
-   them live-synced. On a brand-new database (no data yet) it seeds
-   the DB once from the built-in sample dataset so the app isn't empty
-   on first run — after that, Firebase is the single source of truth. */
-equipmentRef.on("value", (snapshot) => {
-  if (!snapshot.exists()) {
-    if (!dataLoaded) {
-      // Nothing in the DB yet — seed it once from the sample dataset.
-      const seed = {};
-      buildSeedData().forEach((row) => {
-        const { id, ...rest } = row;
-        seed[equipmentRef.push().key] = rest;
-      });
-      equipmentRef.set(seed).catch((err) => console.error("Seed failed:", err));
-    }
-    return; // the .set() above will re-trigger this listener with data
-  }
-
-  const val = snapshot.val();
-  DATA = Object.keys(val).map((key) => ({ id: key, ...val[key] }));
-
-  if (!dataLoaded) {
-    dataLoaded = true;
-    switchPage("checking");
-  } else {
-    refreshCurrentPage();
-  }
-}, (err) => {
-  console.error("Firebase read failed:", err);
-  showToast("Couldn't connect to the database.");
-});
-
-function refreshCurrentPage() {
-  const activeSection = document.querySelector(".page.active");
-  if (!activeSection) return;
-  const page = activeSection.id.replace("page-", "");
-  const renderer = PAGE_RENDERERS[page];
-  if (renderer) renderer();
-}
+  /* ---------------- init ---------------- */
+  render();
+})();
