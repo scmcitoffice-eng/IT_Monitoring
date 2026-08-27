@@ -268,6 +268,15 @@ function bindMisc() {
   });
 }
 
+/* ---------- Firebase connection check ----------
+   firebase-config.js loads first and dispatches this event once
+   initializeApp()/getDatabase() have run. This is just a visibility
+   hook for now — the dashboard below still renders from STATE.
+   Swap that out once you decide what should read from window.firebaseDb. */
+window.addEventListener("firebase-ready", () => {
+  console.log("[firebase] connected:", window.firebaseDb.app.options.projectId);
+});
+
 /* ---------- Init ---------- */
 function init() {
   renderDate();
