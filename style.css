@@ -15,6 +15,10 @@
   --amber-bg:#fef4e0;
   --red:#e0403f;
   --red-bg:#fdeaea;
+  --blue:#3b82f6;
+  --blue-bg:#e8f0fe;
+  --purple:#8b5cf6;
+  --purple-bg:#f1ebfe;
   --radius-lg:14px;
   --radius-md:10px;
   --shadow-card:0 1px 2px rgba(20,20,30,0.04), 0 1px 12px rgba(20,20,30,0.05);
@@ -170,7 +174,7 @@ ul{list-style:none;}
 /* ---------- Stat cards ---------- */
 .stat-grid{
   display:grid;
-  grid-template-columns:repeat(2,1fr);
+  grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
   gap:18px;
   margin-bottom:20px;
 }
@@ -196,6 +200,13 @@ ul{list-style:none;}
 .stat-icon.green{background:var(--green);}
 .stat-icon.amber{background:var(--amber);}
 .stat-icon.red{background:var(--red);}
+.stat-icon.blue{background:var(--blue);}
+.stat-icon.purple{background:var(--purple);}
+.stat-icon.operational{background:var(--green);}
+.stat-icon.warning{background:var(--amber);}
+.stat-icon.for_repair{background:var(--red);}
+.stat-icon.for_monitoring{background:var(--blue);}
+.stat-icon.for_replacement{background:var(--purple);}
 
 .stat-mini{font-size:20px;color:#c9ccd6;}
 
@@ -342,6 +353,14 @@ tbody tr:last-child td{border-bottom:none;}
 .status-pill.warning .dot{background:var(--amber);}
 .status-pill.offline{background:var(--red-bg);color:var(--red);}
 .status-pill.offline .dot{background:var(--red);}
+.status-pill.operational{background:var(--green-bg);color:var(--green);}
+.status-pill.operational .dot{background:var(--green);}
+.status-pill.for_repair{background:var(--red-bg);color:var(--red);}
+.status-pill.for_repair .dot{background:var(--red);}
+.status-pill.for_monitoring{background:var(--blue-bg);color:var(--blue);}
+.status-pill.for_monitoring .dot{background:var(--blue);}
+.status-pill.for_replacement{background:var(--purple-bg);color:var(--purple);}
+.status-pill.for_replacement .dot{background:var(--purple);}
 
 .action-cell{display:flex;gap:14px;justify-content:flex-end;color:var(--text-sub);font-size:14px;}
 .action-cell span{cursor:pointer;}
@@ -559,6 +578,8 @@ body.theme-dark{
   --green-bg:#123322;
   --amber-bg:#332a10;
   --red-bg:#3a1414;
+  --blue-bg:#132849;
+  --purple-bg:#2a2049;
 }
 body.theme-dark .search-box{background:#15151a;}
 body.theme-dark .stat-mini{color:#3a3a45;}
