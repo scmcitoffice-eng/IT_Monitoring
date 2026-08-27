@@ -152,6 +152,7 @@ const STATE = {
   alerts: generateAlerts(),
   maintenanceTasks: [],
   users: generateUsers(),
+  locations: [...LOCATIONS],
   statusCounts: {}, typeCounts: [], totalEquipment: 0,
   ui: {
     activePage: "Dashboard",
@@ -206,6 +207,7 @@ function saveEquipment() { saveSlice("equipment", STATE.equipment); }
 function saveAlerts() { saveSlice("alerts", STATE.alerts); }
 function saveTasks() { saveSlice("maintenanceTasks", STATE.maintenanceTasks); }
 function saveUsers() { saveSlice("users", STATE.users); }
+function saveLocations() { saveSlice("locations", STATE.locations); }
 function saveSettings() { saveSlice("settings", STATE.settings); }
 
 // Recompute the nextXId counters from whatever was loaded, so newly created
@@ -250,6 +252,7 @@ async function loadStateFromFirebase() {
       STATE.alerts = Array.isArray(data.alerts) ? data.alerts : [];
       STATE.maintenanceTasks = Array.isArray(data.maintenanceTasks) ? data.maintenanceTasks : [];
       STATE.users = Array.isArray(data.users) ? data.users : [];
+      STATE.locations = (Array.isArray(data.locations) && data.locations.length > 0) ? data.locations : STATE.locations;
       if (data.settings) Object.assign(STATE.settings, data.settings);
       resyncIdCounters();
       return true;
@@ -269,6 +272,7 @@ function seedFirebase() {
   saveAlerts();
   saveTasks();
   saveUsers();
+  saveLocations();
   saveSettings();
 }
 
@@ -516,7 +520,7 @@ function refreshAfterDataChange() {
 function equipmentFormHtml(eq) {
   const typeOptions = TYPE_CATEGORIES.map(c => `<option value="${c.key}" ${eq && eq.type === c.key ? "selected" : ""}>${c.label.replace(/s$/, "")}</option>`).join("");
   const statusOptions = STATUS_CATEGORIES.map(c => `<option value="${c.key}" ${eq && eq.status === c.key ? "selected" : ""}>${c.label}</option>`).join("");
-  const locationOptions = LOCATIONS.map(l => `<option value="${l}" ${eq && eq.location === l ? "selected" : ""}>${l}</option>`).join("");
+  const locationOptions = STATE.locations.map(l => `<option value="${l}" ${eq && eq.location === l ? "selected" : ""}>${l}</option>`).join("");
   return `
     <form id="equipmentForm">
       <div class="form-row">
@@ -1077,18 +1081,29 @@ function mountReportsPage(container) {
 function renderLocationsPage() {
   const byLocation = {};
   STATE.equipment.forEach(e => { byLocation[e.location] = (byLocation[e.location] || 0) + 1; });
-  const cards = Object.entries(byLocation).map(([loc, count]) => `
+  const cards = STATE.locations.map(loc => `
     <div class="location-card" data-location="${escapeHtml(loc)}">
       <div class="loc-name">📍 ${escapeHtml(loc)}</div>
-      <div class="loc-count">${count} equipment</div>
+      <div class="loc-count">${byLocation[loc] || 0} equipment</div>
     </div>
   `).join("");
   return `
     <section class="card">
-      <div class="page-head"><h2>Locations</h2></div>
-      <div class="locations-grid">${cards}</div>
+      <div class="page-head">
+        <h2>Locations</h2>
+        <button class="btn-primary" id="addLocationBtn">+ Add Location</button>
+      </div>
+      <div class="locations-grid">${cards || `<div class="empty-state">No locations yet.</div>`}</div>
     </section>
   `;
+}
+function addLocation(name) {
+  const exists = STATE.locations.some(l => l.toLowerCase() === name.toLowerCase());
+  if (exists) { showToast(`"${name}" already exists`); return; }
+  STATE.locations.push(name);
+  renderPage("Locations");
+  saveLocations();
+  showToast(`Added location "${name}"`);
 }
 function mountLocationsPage(container) {
   $$(".location-card", container).forEach(card => {
@@ -1099,6 +1114,25 @@ function mountLocationsPage(container) {
       renderEquipmentPageTable();
       const input = $("#searchInputFull");
       if (input) input.value = card.dataset.location;
+    });
+  });
+  $("#addLocationBtn", container).addEventListener("click", () => {
+    openModal({
+      title: "Add Location",
+      bodyHtml: `
+        <form id="locationForm">
+          <div class="form-row"><label for="lName">Location Name</label><input type="text" id="lName" placeholder="e.g. 4th Floor Marketing"></div>
+        </form>
+      `,
+      footerHtml: `<button type="button" class="btn-secondary" data-close-modal>Cancel</button><button type="button" class="btn-primary" id="submitLocation">Add Location</button>`,
+      onMount: (overlay) => {
+        $("#submitLocation", overlay).addEventListener("click", () => {
+          const name = $("#lName", overlay).value.trim();
+          if (!name) { $("#lName", overlay).focus(); return; }
+          addLocation(name);
+          closeModal();
+        });
+      }
     });
   });
 }
