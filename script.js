@@ -474,6 +474,7 @@ function addEquipment(data) {
     icon: cfg.icon,
     location: data.location,
     status: data.status,
+    note: data.note || "",
     lastCheck: "Just now"
   });
   recomputeDerived();
@@ -486,7 +487,7 @@ function updateEquipmentById(id, data) {
   const eq = findEquipment(id);
   if (!eq) return;
   const cfg = TYPE_CATEGORIES.find(c => c.key === data.type) || TYPE_CATEGORIES[4];
-  Object.assign(eq, { name: data.name, model: data.model, type: data.type, icon: cfg.icon, location: data.location, status: data.status });
+  Object.assign(eq, { name: data.name, model: data.model, type: data.type, icon: cfg.icon, location: data.location, status: data.status, note: data.note || "" });
   recomputeDerived();
   refreshAfterDataChange();
   saveEquipment();
@@ -538,6 +539,10 @@ function equipmentFormHtml(eq) {
         <label for="fStatus">Status</label>
         <select id="fStatus">${statusOptions}</select>
       </div>
+      <div class="form-row">
+        <label for="fNote">Note</label>
+        <textarea id="fNote" rows="3" placeholder="Optional notes about this equipment...">${eq ? escapeHtml(eq.note || "") : ""}</textarea>
+      </div>
     </form>
   `;
 }
@@ -559,7 +564,8 @@ function openAddEquipmentModal() {
           model: $("#fModel", overlay).value.trim(),
           type: $("#fType", overlay).value,
           location: $("#fLocation", overlay).value,
-          status: $("#fStatus", overlay).value
+          status: $("#fStatus", overlay).value,
+          note: $("#fNote", overlay).value.trim()
         });
         closeModal();
       });
@@ -586,7 +592,8 @@ function openEditEquipmentModal(id) {
           model: $("#fModel", overlay).value.trim(),
           type: $("#fType", overlay).value,
           location: $("#fLocation", overlay).value,
-          status: $("#fStatus", overlay).value
+          status: $("#fStatus", overlay).value,
+          note: $("#fNote", overlay).value.trim()
         });
         closeModal();
       });
@@ -605,6 +612,7 @@ function openViewEquipmentModal(id) {
       <div class="detail-row"><span class="k">Location</span><span class="v">${escapeHtml(eq.location)}</span></div>
       <div class="detail-row"><span class="k">Status</span><span class="v"><span class="status-pill ${eq.status}"><span class="dot"></span>${statusLabel(eq.status)}</span></span></div>
       <div class="detail-row"><span class="k">Last Check</span><span class="v">${eq.lastCheck}</span></div>
+      ${eq.note ? `<div class="detail-row detail-note"><span class="k">Note</span><span class="v">${escapeHtml(eq.note)}</span></div>` : ""}
     `,
     footerHtml: `
       <button type="button" class="btn-secondary" data-close-modal>Close</button>
@@ -760,8 +768,8 @@ function bindCardMenus() {
 }
 
 function exportEquipmentCsv() {
-  const header = ["Name", "Model", "Type", "Location", "Status", "Last Check"];
-  const lines = STATE.equipment.map(e => [e.name, e.model, e.type, e.location, e.status, e.lastCheck]
+  const header = ["Name", "Model", "Type", "Location", "Status", "Last Check", "Note"];
+  const lines = STATE.equipment.map(e => [e.name, e.model, e.type, e.location, e.status, e.lastCheck, e.note || ""]
     .map(v => `"${String(v).replace(/"/g, '""')}"`).join(","));
   const csv = [header.join(","), ...lines].join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });

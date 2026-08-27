@@ -481,6 +481,8 @@ tbody tr:last-child td{border-bottom:none;}
 .detail-row:last-child{border-bottom:none;}
 .detail-row .k{color:var(--text-sub);}
 .detail-row .v{font-weight:600;text-align:right;}
+.detail-row.detail-note{flex-direction:column;align-items:flex-start;gap:4px;}
+.detail-row.detail-note .v{text-align:left;font-weight:400;white-space:pre-wrap;line-height:1.5;}
 
 /* ---------- Dropdown menu (⋮ / ⋯) ---------- */
 .dropdown-menu{
