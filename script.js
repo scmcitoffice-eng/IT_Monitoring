@@ -1083,7 +1083,13 @@ function renderLocationsPage() {
   STATE.equipment.forEach(e => { byLocation[e.location] = (byLocation[e.location] || 0) + 1; });
   const cards = STATE.locations.map(loc => `
     <div class="location-card" data-location="${escapeHtml(loc)}">
-      <div class="loc-name">📍 ${escapeHtml(loc)}</div>
+      <div class="loc-card-top">
+        <div class="loc-name">📍 ${escapeHtml(loc)}</div>
+        <div class="loc-actions">
+          <span title="Edit" data-loc-action="edit">✎</span>
+          <span title="Delete" data-loc-action="delete">🗑</span>
+        </div>
+      </div>
       <div class="loc-count">${byLocation[loc] || 0} equipment</div>
     </div>
   `).join("");
@@ -1105,9 +1111,97 @@ function addLocation(name) {
   saveLocations();
   showToast(`Added location "${name}"`);
 }
+function editLocation(oldName, newName) {
+  if (newName.toLowerCase() !== oldName.toLowerCase() && STATE.locations.some(l => l.toLowerCase() === newName.toLowerCase())) {
+    showToast(`"${newName}" already exists`);
+    return;
+  }
+  const idx = STATE.locations.findIndex(l => l === oldName);
+  if (idx === -1) return;
+  STATE.locations[idx] = newName;
+  // Keep equipment already assigned to the old name pointing at the renamed location.
+  STATE.equipment.forEach(e => { if (e.location === oldName) e.location = newName; });
+  renderPage("Locations");
+  saveLocations();
+  saveEquipment();
+  showToast(`Renamed to "${newName}"`);
+}
+function deleteLocation(name) {
+  STATE.locations = STATE.locations.filter(l => l !== name);
+  renderPage("Locations");
+  saveLocations();
+  showToast(`Deleted location "${name}"`);
+}
+function openAddLocationModal() {
+  openModal({
+    title: "Add Location",
+    bodyHtml: `
+      <form id="locationForm">
+        <div class="form-row"><label for="lName">Location Name</label><input type="text" id="lName" placeholder="e.g. 4th Floor Marketing"></div>
+      </form>
+    `,
+    footerHtml: `<button type="button" class="btn-secondary" data-close-modal>Cancel</button><button type="button" class="btn-primary" id="submitLocation">Add Location</button>`,
+    onMount: (overlay) => {
+      $("#submitLocation", overlay).addEventListener("click", () => {
+        const name = $("#lName", overlay).value.trim();
+        if (!name) { $("#lName", overlay).focus(); return; }
+        addLocation(name);
+        closeModal();
+      });
+    }
+  });
+}
+function openEditLocationModal(name) {
+  openModal({
+    title: "Edit Location",
+    bodyHtml: `
+      <form id="editLocationForm">
+        <div class="form-row"><label for="lEditName">Location Name</label><input type="text" id="lEditName" value="${escapeHtml(name)}"></div>
+      </form>
+    `,
+    footerHtml: `<button type="button" class="btn-secondary" data-close-modal>Cancel</button><button type="button" class="btn-primary" id="submitEditLocation">Save Changes</button>`,
+    onMount: (overlay) => {
+      $("#lEditName", overlay).focus();
+      $("#submitEditLocation", overlay).addEventListener("click", () => {
+        const newName = $("#lEditName", overlay).value.trim();
+        if (!newName) { $("#lEditName", overlay).focus(); return; }
+        editLocation(name, newName);
+        closeModal();
+      });
+    }
+  });
+}
+function confirmDeleteLocation(name) {
+  const count = STATE.equipment.filter(e => e.location === name).length;
+  const warning = count > 0
+    ? `<p style="margin-top:10px;color:var(--text-sub);font-size:12.5px;">${count} equipment record${count === 1 ? "" : "s"} currently use this location and will keep showing "${escapeHtml(name)}" until reassigned.</p>`
+    : "";
+  openModal({
+    title: "Delete Location",
+    bodyHtml: `<p>Are you sure you want to delete <strong>${escapeHtml(name)}</strong>? This can't be undone.</p>${warning}`,
+    footerHtml: `
+      <button type="button" class="btn-secondary" data-close-modal>Cancel</button>
+      <button type="button" class="btn-danger" id="confirmDeleteLocationBtn">Delete</button>
+    `,
+    onMount: (overlay) => {
+      $("#confirmDeleteLocationBtn", overlay).addEventListener("click", () => {
+        deleteLocation(name);
+        closeModal();
+      });
+    }
+  });
+}
 function mountLocationsPage(container) {
   $$(".location-card", container).forEach(card => {
-    card.addEventListener("click", () => {
+    card.addEventListener("click", (e) => {
+      const actionEl = e.target.closest("[data-loc-action]");
+      if (actionEl) {
+        e.stopPropagation();
+        const loc = card.dataset.location;
+        if (actionEl.dataset.locAction === "edit") openEditLocationModal(loc);
+        else if (actionEl.dataset.locAction === "delete") confirmDeleteLocation(loc);
+        return;
+      }
       goToPage("Equipment");
       STATE.ui.equipmentPage.search = card.dataset.location;
       STATE.ui.equipmentPage.page = 1;
@@ -1116,25 +1210,7 @@ function mountLocationsPage(container) {
       if (input) input.value = card.dataset.location;
     });
   });
-  $("#addLocationBtn", container).addEventListener("click", () => {
-    openModal({
-      title: "Add Location",
-      bodyHtml: `
-        <form id="locationForm">
-          <div class="form-row"><label for="lName">Location Name</label><input type="text" id="lName" placeholder="e.g. 4th Floor Marketing"></div>
-        </form>
-      `,
-      footerHtml: `<button type="button" class="btn-secondary" data-close-modal>Cancel</button><button type="button" class="btn-primary" id="submitLocation">Add Location</button>`,
-      onMount: (overlay) => {
-        $("#submitLocation", overlay).addEventListener("click", () => {
-          const name = $("#lName", overlay).value.trim();
-          if (!name) { $("#lName", overlay).focus(); return; }
-          addLocation(name);
-          closeModal();
-        });
-      }
-    });
-  });
+  $("#addLocationBtn", container).addEventListener("click", openAddLocationModal);
 }
 
 /* ----- Users page ----- */

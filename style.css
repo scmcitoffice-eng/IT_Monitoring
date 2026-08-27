@@ -552,8 +552,13 @@ tbody tr:last-child td{border-bottom:none;}
   padding:16px;box-shadow:var(--shadow-card);cursor:pointer;transition:border-color .15s ease;
 }
 .location-card:hover{border-color:var(--accent-red);}
+.loc-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
 .location-card .loc-name{font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;}
 .location-card .loc-count{font-size:12px;color:var(--text-sub);margin-top:6px;}
+.loc-actions{display:flex;gap:10px;color:var(--text-sub);font-size:13px;flex-shrink:0;}
+.loc-actions span{cursor:pointer;}
+.loc-actions span:hover{color:var(--text-main);}
+.loc-actions span[data-loc-action="delete"]:hover{color:#e0403f;}
 
 .settings-block{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:6px 16px;box-shadow:var(--shadow-card);margin-bottom:16px;}
 .settings-item{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--border);gap:16px;}
