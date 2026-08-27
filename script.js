@@ -1,44 +1,253 @@
 /* ==========================================================
    IT Monitoring System — Dashboard
-   Vanilla JS: renders stat cards, donut charts, alerts,
-   and an equipment table with search + pagination.
+   Vanilla JS. Single in-memory data store (STATE) drives every
+   view. Nothing here talks to a server yet — Add/Edit/Delete/
+   Alerts/Tasks/Users all mutate STATE and re-render. Wire these
+   into window.firebaseDb (see firebase-config.js) when you're
+   ready to persist.
    ========================================================== */
 
-const STATE = {
-  totalEquipment: 48,
-  statusCounts: { online: 36, warning: 7, offline: 5 },
-  typeCounts: [
-    { label: "Printers",   value: 18, color: "#6e1420" },
-    { label: "Computers",  value: 12, color: "#8b1a28" },
-    { label: "Networking", value: 8,  color: "#a83a44" },
-    { label: "UPS",        value: 6,  color: "#c9707a" },
-    { label: "Others",     value: 4,  color: "#e2b6bb" }
-  ],
-  alerts: [
-    { title: "Printer - Front Office", sub: "Offline • Last seen 2 hours ago", time: "10:15 AM", level: "offline" },
-    { title: "UPS - Server Room",      sub: "Battery low • 20% remaining",     time: "09:58 AM", level: "warning" },
-    { title: "Photocopier - Admin",    sub: "Low toner • Replace soon",        time: "09:30 AM", level: "warning" },
-    { title: "Switch - 2nd Floor",     sub: "Back online",                    time: "09:10 AM", level: "online" }
-  ],
-  equipment: [
-    { name: "Printer - Front Office", model: "HP LaserJet Pro M404",   type: "Printer",     icon: "🖨", location: "Front Office",    status: "offline", lastCheck: "2 hours ago" },
-    { name: "Server - Main",          model: "Dell PowerEdge R740",    type: "Server",       icon: "🖥", location: "Server Room",     status: "online",  lastCheck: "1 minute ago" },
-    { name: "Switch - 2nd Floor",     model: "Cisco Catalyst 2960",    type: "Networking",   icon: "🔀", location: "2nd Floor IT Room",status: "online",  lastCheck: "1 minute ago" },
-    { name: "UPS - Server Room",      model: "APC Smart-UPS 1500",     type: "UPS",          icon: "🔋", location: "Server Room",     status: "warning", lastCheck: "5 minutes ago" },
-    { name: "Photocopier - Admin",    model: "Canon imageRUNNER 2525", type: "Photocopier",  icon: "🖨", location: "Admin Office",    status: "warning", lastCheck: "15 minutes ago" }
-  ],
-  totalEntries: 48,
-  currentPage: 1,
-  totalPages: 10
+/* ---------- Config / reference data ---------- */
+const TYPE_CATEGORIES = [
+  { key: "Printer",     label: "Printers",   color: "#6e1420", icon: "🖨" },
+  { key: "Computer",    label: "Computers",  color: "#8b1a28", icon: "🖥" },
+  { key: "Networking",  label: "Networking", color: "#a83a44", icon: "🔀" },
+  { key: "UPS",         label: "UPS",        color: "#c9707a", icon: "🔋" },
+  { key: "Other",       label: "Others",     color: "#e2b6bb", icon: "📦" }
+];
+const TYPE_COUNTS_TARGET = { Printer: 18, Computer: 12, Networking: 8, UPS: 6, Other: 4 };
+const STATUS_COUNTS_TARGET = { online: 36, warning: 7, offline: 5 };
+
+const LOCATIONS = [
+  "Front Office", "Server Room", "2nd Floor IT Room", "Admin Office",
+  "3rd Floor Sales", "Reception", "Warehouse", "HR Department"
+];
+const MODELS = {
+  Printer:    ["HP LaserJet Pro M404", "Canon imageRUNNER 2525", "Epson WorkForce Pro", "Brother HL-L2350"],
+  Computer:   ["Dell PowerEdge R740", "Dell OptiPlex 7090", "Lenovo ThinkCentre M720", "HP EliteDesk 800"],
+  Networking: ["Cisco Catalyst 2960", "TP-Link TL-SG1024", "Ubiquiti UniFi Switch", "Netgear GS724T"],
+  UPS:        ["APC Smart-UPS 1500", "APC Back-UPS Pro 1000", "CyberPower CP1500", "Eaton 5P 1500"],
+  Other:      ["Barcode Scanner DS2200", "IP Camera Hikvision", "VoIP Phone Yealink", "Projector Epson EB-X05"]
 };
+const LAST_CHECK_OPTIONS = [
+  "Just now", "1 minute ago", "2 minutes ago", "5 minutes ago", "10 minutes ago",
+  "15 minutes ago", "30 minutes ago", "1 hour ago", "2 hours ago", "3 hours ago", "Yesterday"
+];
+
+/* Small seeded RNG so the generated dataset is stable across reloads
+   (no layout jitter every time the page loads) but still looks varied. */
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function seededShuffle(arr, rng) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+let nextEquipmentId = 1;
+let nextTaskId = 1;
+let nextUserId = 1;
+let nextAlertId = 1;
+
+function generateEquipment() {
+  const rng = mulberry32(42);
+  let typePool = [];
+  Object.entries(TYPE_COUNTS_TARGET).forEach(([key, count]) => {
+    for (let i = 0; i < count; i++) typePool.push(key);
+  });
+  let statusPool = [];
+  Object.entries(STATUS_COUNTS_TARGET).forEach(([status, count]) => {
+    for (let i = 0; i < count; i++) statusPool.push(status);
+  });
+  typePool = seededShuffle(typePool, rng);
+  statusPool = seededShuffle(statusPool, rng);
+
+  const perCategoryCount = {};
+  const list = [];
+  for (let i = 0; i < typePool.length; i++) {
+    const key = typePool[i];
+    const status = statusPool[i];
+    const cfg = TYPE_CATEGORIES.find(c => c.key === key);
+    perCategoryCount[key] = (perCategoryCount[key] || 0) + 1;
+    const location = LOCATIONS[i % LOCATIONS.length];
+    const model = MODELS[key][(perCategoryCount[key] - 1) % MODELS[key].length];
+    list.push({
+      id: nextEquipmentId++,
+      name: `${key} ${perCategoryCount[key]} - ${location}`,
+      model,
+      type: key,
+      icon: cfg.icon,
+      location,
+      status,
+      lastCheck: LAST_CHECK_OPTIONS[i % LAST_CHECK_OPTIONS.length]
+    });
+  }
+  return list;
+}
+
+function generateAlerts() {
+  const base = [
+    { title: "Printer 1 - Front Office", sub: "Offline • Last seen 2 hours ago", level: "offline" },
+    { title: "UPS 1 - Server Room",      sub: "Battery low • 20% remaining",     level: "warning" },
+    { title: "Printer 2 - Admin Office", sub: "Low toner • Replace soon",        level: "warning" },
+    { title: "Networking 1 - 2nd Floor", sub: "Back online",                    level: "online" },
+    { title: "Computer 3 - Reception",   sub: "CPU usage sustained above 90%",  level: "warning" },
+    { title: "UPS 2 - Warehouse",        sub: "Offline • Unreachable",          level: "offline" },
+    { title: "Printer 3 - Warehouse",    sub: "Paper jam detected",             level: "warning" },
+    { title: "Other 1 - HR Department",  sub: "Firmware update available",      level: "online" }
+  ];
+  const times = ["10:15 AM", "09:58 AM", "09:30 AM", "09:10 AM", "08:47 AM", "08:20 AM", "07:55 AM", "07:30 AM"];
+  return base.map((a, i) => ({ id: nextAlertId++, time: times[i], dismissed: false, ...a }));
+}
+
+function generateMaintenanceTasks(equipment) {
+  const picks = [0, 5, 12, 20, 27, 33].map(i => equipment[i % equipment.length]);
+  return picks.map((eq, i) => ({
+    id: nextTaskId++,
+    title: `Routine check — ${eq.name}`,
+    equipmentId: eq.id,
+    due: ["Today", "Tomorrow", "In 3 days", "Next week", "Overdue", "In 2 weeks"][i % 6],
+    done: i === 5
+  }));
+}
+
+function generateUsers() {
+  return [
+    { id: nextUserId++, name: "IT Administrator", role: "System Admin", email: "admin@company.com" },
+    { id: nextUserId++, name: "Maria Santos",      role: "IT Technician", email: "maria.santos@company.com" },
+    { id: nextUserId++, name: "James Cruz",        role: "IT Technician", email: "james.cruz@company.com" },
+    { id: nextUserId++, name: "Ana Reyes",         role: "Viewer",        email: "ana.reyes@company.com" }
+  ];
+}
+
+/* ---------- State ---------- */
+const STATE = {
+  equipment: generateEquipment(),
+  alerts: generateAlerts(),
+  maintenanceTasks: [],
+  users: generateUsers(),
+  statusCounts: {}, typeCounts: [], totalEquipment: 0,
+  ui: {
+    activePage: "Dashboard",
+    dashboard: { page: 1, search: "", pageSize: 5 },
+    equipmentPage: { page: 1, search: "", pageSize: 8 }
+  },
+  settings: { theme: "light", notifications: true, autoRefresh: false }
+};
+STATE.maintenanceTasks = generateMaintenanceTasks(STATE.equipment);
+
+function recomputeDerived() {
+  const counts = { online: 0, warning: 0, offline: 0 };
+  const byType = {};
+  STATE.equipment.forEach(e => {
+    counts[e.status] = (counts[e.status] || 0) + 1;
+    byType[e.type] = (byType[e.type] || 0) + 1;
+  });
+  STATE.statusCounts = counts;
+  STATE.typeCounts = TYPE_CATEGORIES
+    .map(c => ({ label: c.label, value: byType[c.key] || 0, color: c.color }))
+    .filter(c => c.value > 0);
+  STATE.totalEquipment = STATE.equipment.length;
+}
+recomputeDerived();
 
 /* ---------- Helpers ---------- */
-const $ = (sel) => document.querySelector(sel);
-const pct = (n, total) => Math.round((n / total) * 100);
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+const pct = (n, total) => total ? Math.round((n / total) * 100) : 0;
+function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ---------- Toast ---------- */
+function showToast(msg) {
+  const existing = $(".toast");
+  if (existing) existing.remove();
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2400);
+}
+
+/* ---------- Modal ---------- */
+function openModal({ title, bodyHtml, footerHtml, onMount }) {
+  closeModal();
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.id = "activeModalOverlay";
+  overlay.innerHTML = `
+    <div class="modal-box" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h3>${title}</h3>
+        <button type="button" class="modal-close" data-close-modal>✕</button>
+      </div>
+      <div class="modal-body">${bodyHtml}</div>
+      ${footerHtml ? `<div class="modal-foot">${footerHtml}</div>` : ""}
+    </div>
+  `;
+  overlay.addEventListener("mousedown", (e) => {
+    if (e.target === overlay) closeModal();
+  });
+  overlay.addEventListener("click", (e) => {
+    if (e.target.closest("[data-close-modal]")) closeModal();
+  });
+  document.body.appendChild(overlay);
+  if (onMount) onMount(overlay);
+}
+function closeModal() {
+  const el = $("#activeModalOverlay");
+  if (el) el.remove();
+}
+
+/* ---------- Dropdown menu ---------- */
+function openDropdown(anchorEl, items) {
+  closeDropdown();
+  const rect = anchorEl.getBoundingClientRect();
+  const menu = document.createElement("div");
+  menu.className = "dropdown-menu";
+  menu.id = "activeDropdown";
+  menu.style.top = `${rect.bottom + 6}px`;
+  menu.style.left = `${Math.min(rect.left, window.innerWidth - 190)}px`;
+  menu.innerHTML = items.map((it, i) => `
+    <button type="button" class="dropdown-item ${it.danger ? "danger" : ""}" data-idx="${i}">${it.label}</button>
+  `).join("");
+  menu.addEventListener("click", (e) => {
+    const btn = e.target.closest(".dropdown-item");
+    if (!btn) return;
+    const item = items[parseInt(btn.dataset.idx, 10)];
+    closeDropdown();
+    if (item.onClick) item.onClick();
+  });
+  document.body.appendChild(menu);
+  setTimeout(() => document.addEventListener("mousedown", onOutsideClick), 0);
+}
+function onOutsideClick(e) {
+  const menu = $("#activeDropdown");
+  if (menu && !menu.contains(e.target)) closeDropdown();
+}
+function closeDropdown() {
+  const el = $("#activeDropdown");
+  if (el) el.remove();
+  document.removeEventListener("mousedown", onOutsideClick);
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { closeModal(); closeDropdown(); }
+});
 
 /* ---------- Date / time header ---------- */
 function renderDate() {
-  const now = new Date(2025, 4, 26, 10, 30); // matches mock: May 26, 2025, Monday 10:30 AM
+  const now = new Date(2025, 4, 26, 10, 30);
   const dateFmt = now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   const dayFmt = now.toLocaleDateString("en-US", { weekday: "long" });
   const timeFmt = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
@@ -49,29 +258,13 @@ function renderDate() {
 /* ---------- Stat cards ---------- */
 function renderStatCards() {
   const { totalEquipment, statusCounts } = STATE;
+  const online = statusCounts.online || 0, warning = statusCounts.warning || 0, offline = statusCounts.offline || 0;
   const cards = [
-    {
-      icon: "🖥", iconClass: "maroon",
-      label: "Total Equipment", value: totalEquipment,
-      foot: "All Locations", mini: "▤"
-    },
-    {
-      icon: "✓", iconClass: "green",
-      label: "Online", value: statusCounts.online,
-      foot: `${pct(statusCounts.online, totalEquipment)}%`, mini: "📈"
-    },
-    {
-      icon: "⚠", iconClass: "amber",
-      label: "Warning", value: statusCounts.warning,
-      foot: `${pct(statusCounts.warning, totalEquipment)}%`, mini: "📊"
-    },
-    {
-      icon: "✕", iconClass: "red",
-      label: "Offline", value: statusCounts.offline,
-      foot: `${pct(statusCounts.offline, totalEquipment)}%`, mini: "◔"
-    }
+    { icon: "🖥", iconClass: "maroon", label: "Total Equipment", value: totalEquipment, foot: "All Locations", mini: "▤" },
+    { icon: "✓", iconClass: "green",  label: "Online",  value: online,  foot: `${pct(online, totalEquipment)}%`,  mini: "📈" },
+    { icon: "⚠", iconClass: "amber",  label: "Warning", value: warning, foot: `${pct(warning, totalEquipment)}%`, mini: "📊" },
+    { icon: "✕", iconClass: "red",    label: "Offline", value: offline, foot: `${pct(offline, totalEquipment)}%`, mini: "◔" }
   ];
-
   $("#statGrid").innerHTML = cards.map(c => `
     <div class="stat-card">
       <div class="stat-top">
@@ -83,6 +276,8 @@ function renderStatCards() {
       <div class="stat-foot">${c.foot}</div>
     </div>
   `).join("");
+  const totalEl = $("#donutTotalValue");
+  if (totalEl) totalEl.textContent = totalEquipment;
 }
 
 /* ---------- Donut chart (SVG) ---------- */
@@ -90,8 +285,7 @@ function buildDonut(svgEl, segments, size = 200, thickness = 26) {
   const r = (size - thickness) / 2;
   const cx = size / 2, cy = size / 2;
   const circumference = 2 * Math.PI * r;
-  const total = segments.reduce((s, seg) => s + seg.value, 0);
-
+  const total = segments.reduce((s, seg) => s + seg.value, 0) || 1;
   let offset = 0;
   let html = `<g transform="rotate(-90 ${cx} ${cy})">`;
   segments.forEach(seg => {
@@ -112,12 +306,11 @@ function buildDonut(svgEl, segments, size = 200, thickness = 26) {
 function renderStatusDonut() {
   const { statusCounts, totalEquipment } = STATE;
   const segments = [
-    { label: "Online",  value: statusCounts.online,  color: "#22b06b" },
-    { label: "Warning", value: statusCounts.warning, color: "#f5a623" },
-    { label: "Offline", value: statusCounts.offline, color: "#e0403f" }
+    { label: "Online",  value: statusCounts.online || 0,  color: "#22b06b" },
+    { label: "Warning", value: statusCounts.warning || 0, color: "#f5a623" },
+    { label: "Offline", value: statusCounts.offline || 0, color: "#e0403f" }
   ];
   buildDonut($("#statusDonut"), segments);
-
   $("#statusLegend").innerHTML = segments.map(s => `
     <li>
       <span class="dot" style="background:${s.color}"></span>
@@ -130,7 +323,6 @@ function renderTypeDonut() {
   const segments = STATE.typeCounts;
   const total = segments.reduce((s, seg) => s + seg.value, 0);
   buildDonut($("#typeDonut"), segments);
-
   $("#typeLegend").innerHTML = segments.map(s => `
     <li>
       <span class="dot" style="background:${s.color}"></span>
@@ -140,139 +332,761 @@ function renderTypeDonut() {
   `).join("");
 }
 
-/* ---------- Alerts ---------- */
+/* ---------- Alerts (dashboard preview) ---------- */
 const ALERT_ICONS = { offline: "✕", warning: "⚠", online: "✓" };
 
 function renderAlerts() {
-  $("#alertList").innerHTML = STATE.alerts.map(a => `
+  const visible = STATE.alerts.filter(a => !a.dismissed).slice(0, 4);
+  $("#alertList").innerHTML = visible.map(a => `
     <li class="alert-item">
       <div class="alert-ico ${a.level}">${ALERT_ICONS[a.level]}</div>
       <div class="alert-main-row">
         <div class="alert-body">
-          <div class="alert-title">${a.title}</div>
-          <div class="alert-sub">${a.sub}</div>
+          <div class="alert-title">${escapeHtml(a.title)}</div>
+          <div class="alert-sub">${escapeHtml(a.sub)}</div>
         </div>
         <div class="alert-time">${a.time}</div>
       </div>
     </li>
-  `).join("");
+  `).join("") || `<li class="empty-state">No alerts. All clear.</li>`;
 
-  $("#alertCount").textContent = STATE.alerts.filter(a => a.level !== "online").length;
+  $("#alertCount").textContent = STATE.alerts.filter(a => !a.dismissed && a.level !== "online").length;
 }
 
-/* ---------- Equipment table ---------- */
-function renderTable(filterText = "") {
-  const q = filterText.trim().toLowerCase();
-  const rows = STATE.equipment.filter(e =>
+/* ---------- Equipment CRUD ---------- */
+function findEquipment(id) { return STATE.equipment.find(e => e.id === id); }
+
+function addEquipment(data) {
+  const cfg = TYPE_CATEGORIES.find(c => c.key === data.type) || TYPE_CATEGORIES[4];
+  STATE.equipment.unshift({
+    id: nextEquipmentId++,
+    name: data.name,
+    model: data.model || "—",
+    type: data.type,
+    icon: cfg.icon,
+    location: data.location,
+    status: data.status,
+    lastCheck: "Just now"
+  });
+  recomputeDerived();
+  refreshAfterDataChange();
+  showToast(`Added "${data.name}"`);
+}
+
+function updateEquipmentById(id, data) {
+  const eq = findEquipment(id);
+  if (!eq) return;
+  const cfg = TYPE_CATEGORIES.find(c => c.key === data.type) || TYPE_CATEGORIES[4];
+  Object.assign(eq, { name: data.name, model: data.model, type: data.type, icon: cfg.icon, location: data.location, status: data.status });
+  recomputeDerived();
+  refreshAfterDataChange();
+  showToast(`Updated "${eq.name}"`);
+}
+
+function deleteEquipmentById(id) {
+  const eq = findEquipment(id);
+  if (!eq) return;
+  STATE.equipment = STATE.equipment.filter(e => e.id !== id);
+  recomputeDerived();
+  refreshAfterDataChange();
+  showToast(`Deleted "${eq.name}"`);
+}
+
+function refreshAfterDataChange() {
+  renderStatCards();
+  renderStatusDonut();
+  renderTypeDonut();
+  if (STATE.ui.activePage === "Dashboard") renderDashboardTable();
+  if (STATE.ui.activePage === "Equipment") renderPage("Equipment");
+  if (STATE.ui.activePage === "Locations") renderPage("Locations");
+}
+
+function equipmentFormHtml(eq) {
+  const typeOptions = TYPE_CATEGORIES.map(c => `<option value="${c.key}" ${eq && eq.type === c.key ? "selected" : ""}>${c.label.replace(/s$/, "")}</option>`).join("");
+  const statusOptions = ["online", "warning", "offline"].map(s => `<option value="${s}" ${eq && eq.status === s ? "selected" : ""}>${capitalize(s)}</option>`).join("");
+  const locationOptions = LOCATIONS.map(l => `<option value="${l}" ${eq && eq.location === l ? "selected" : ""}>${l}</option>`).join("");
+  return `
+    <form id="equipmentForm">
+      <div class="form-row">
+        <label for="fName">Equipment Name</label>
+        <input type="text" id="fName" required value="${eq ? escapeHtml(eq.name) : ""}" placeholder="e.g. Printer - 3rd Floor">
+      </div>
+      <div class="form-row">
+        <label for="fModel">Model</label>
+        <input type="text" id="fModel" value="${eq ? escapeHtml(eq.model) : ""}" placeholder="e.g. HP LaserJet Pro M404">
+      </div>
+      <div class="form-row">
+        <label for="fType">Type</label>
+        <select id="fType">${typeOptions}</select>
+      </div>
+      <div class="form-row">
+        <label for="fLocation">Location</label>
+        <select id="fLocation">${locationOptions}</select>
+      </div>
+      <div class="form-row">
+        <label for="fStatus">Status</label>
+        <select id="fStatus">${statusOptions}</select>
+      </div>
+    </form>
+  `;
+}
+
+function openAddEquipmentModal() {
+  openModal({
+    title: "Add Equipment",
+    bodyHtml: equipmentFormHtml(null),
+    footerHtml: `
+      <button type="button" class="btn-secondary" data-close-modal>Cancel</button>
+      <button type="button" class="btn-primary" id="submitAddEquipment">Add Equipment</button>
+    `,
+    onMount: (overlay) => {
+      $("#submitAddEquipment", overlay).addEventListener("click", () => {
+        const name = $("#fName", overlay).value.trim();
+        if (!name) { $("#fName", overlay).focus(); return; }
+        addEquipment({
+          name,
+          model: $("#fModel", overlay).value.trim(),
+          type: $("#fType", overlay).value,
+          location: $("#fLocation", overlay).value,
+          status: $("#fStatus", overlay).value
+        });
+        closeModal();
+      });
+    }
+  });
+}
+
+function openEditEquipmentModal(id) {
+  const eq = findEquipment(id);
+  if (!eq) return;
+  openModal({
+    title: "Edit Equipment",
+    bodyHtml: equipmentFormHtml(eq),
+    footerHtml: `
+      <button type="button" class="btn-secondary" data-close-modal>Cancel</button>
+      <button type="button" class="btn-primary" id="submitEditEquipment">Save Changes</button>
+    `,
+    onMount: (overlay) => {
+      $("#submitEditEquipment", overlay).addEventListener("click", () => {
+        const name = $("#fName", overlay).value.trim();
+        if (!name) { $("#fName", overlay).focus(); return; }
+        updateEquipmentById(id, {
+          name,
+          model: $("#fModel", overlay).value.trim(),
+          type: $("#fType", overlay).value,
+          location: $("#fLocation", overlay).value,
+          status: $("#fStatus", overlay).value
+        });
+        closeModal();
+      });
+    }
+  });
+}
+
+function openViewEquipmentModal(id) {
+  const eq = findEquipment(id);
+  if (!eq) return;
+  openModal({
+    title: eq.name,
+    bodyHtml: `
+      <div class="detail-row"><span class="k">Model</span><span class="v">${escapeHtml(eq.model)}</span></div>
+      <div class="detail-row"><span class="k">Type</span><span class="v">${escapeHtml(eq.type)}</span></div>
+      <div class="detail-row"><span class="k">Location</span><span class="v">${escapeHtml(eq.location)}</span></div>
+      <div class="detail-row"><span class="k">Status</span><span class="v"><span class="status-pill ${eq.status}"><span class="dot"></span>${capitalize(eq.status)}</span></span></div>
+      <div class="detail-row"><span class="k">Last Check</span><span class="v">${eq.lastCheck}</span></div>
+    `,
+    footerHtml: `
+      <button type="button" class="btn-secondary" data-close-modal>Close</button>
+      <button type="button" class="btn-primary" id="viewToEdit">Edit</button>
+    `,
+    onMount: (overlay) => {
+      $("#viewToEdit", overlay).addEventListener("click", () => openEditEquipmentModal(id));
+    }
+  });
+}
+
+function confirmDeleteEquipment(id) {
+  const eq = findEquipment(id);
+  if (!eq) return;
+  openModal({
+    title: "Delete Equipment",
+    bodyHtml: `<p>Are you sure you want to delete <strong>${escapeHtml(eq.name)}</strong>? This can't be undone.</p>`,
+    footerHtml: `
+      <button type="button" class="btn-secondary" data-close-modal>Cancel</button>
+      <button type="button" class="btn-danger" id="confirmDelete">Delete</button>
+    `,
+    onMount: (overlay) => {
+      $("#confirmDelete", overlay).addEventListener("click", () => {
+        deleteEquipmentById(id);
+        closeModal();
+      });
+    }
+  });
+}
+
+/* ---------- Equipment table (shared by Dashboard + Equipment page) ---------- */
+function paginatedRows(list, uiState) {
+  const q = uiState.search.trim().toLowerCase();
+  const filtered = list.filter(e =>
     !q || e.name.toLowerCase().includes(q) || e.type.toLowerCase().includes(q) || e.location.toLowerCase().includes(q)
   );
+  const totalPages = Math.max(1, Math.ceil(filtered.length / uiState.pageSize));
+  uiState.page = Math.min(Math.max(1, uiState.page), totalPages);
+  const start = (uiState.page - 1) * uiState.pageSize;
+  const rows = filtered.slice(start, start + uiState.pageSize);
+  return { rows, filtered, totalPages };
+}
 
-  $("#equipmentBody").innerHTML = rows.map(e => `
-    <tr>
+function equipmentRowHtml(e) {
+  return `
+    <tr data-id="${e.id}">
       <td>
         <div class="eq-name-cell">
           <div class="eq-ico">${e.icon}</div>
           <div>
-            <div class="eq-name">${e.name}</div>
-            <div class="eq-model">${e.model}</div>
+            <div class="eq-name">${escapeHtml(e.name)}</div>
+            <div class="eq-model">${escapeHtml(e.model)}</div>
           </div>
         </div>
       </td>
-      <td>${e.type}</td>
-      <td>${e.location}</td>
+      <td>${escapeHtml(e.type)}</td>
+      <td>${escapeHtml(e.location)}</td>
       <td><span class="status-pill ${e.status}"><span class="dot"></span>${capitalize(e.status)}</span></td>
       <td>${e.lastCheck}</td>
       <td>
         <div class="action-cell">
-          <span title="View">👁</span>
-          <span title="Edit">✎</span>
-          <span title="More">⋮</span>
+          <span title="View" data-action="view">👁</span>
+          <span title="Edit" data-action="edit">✎</span>
+          <span title="More" data-action="more">⋮</span>
         </div>
       </td>
     </tr>
-  `).join("") || `<tr><td colspan="6" style="text-align:center;color:var(--text-sub);padding:24px;">No equipment matches your search.</td></tr>`;
-
-  $("#entriesLabel").textContent = q
-    ? `Showing ${rows.length} of ${STATE.equipment.length} entries (filtered)`
-    : `Showing 1 to ${STATE.equipment.length} of ${STATE.totalEntries} entries`;
+  `;
 }
 
-function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function renderDashboardTable() {
+  const ui = STATE.ui.dashboard;
+  const { rows, filtered, totalPages } = paginatedRows(STATE.equipment, ui);
+  $("#equipmentBody").innerHTML = rows.map(equipmentRowHtml).join("")
+    || `<tr><td colspan="6" style="text-align:center;color:var(--text-sub);padding:24px;">No equipment matches your search.</td></tr>`;
+  const start = filtered.length ? (ui.page - 1) * ui.pageSize + 1 : 0;
+  const end = Math.min(ui.page * ui.pageSize, filtered.length);
+  $("#entriesLabel").textContent = ui.search
+    ? `Showing ${start} to ${end} of ${filtered.length} entries (filtered)`
+    : `Showing ${start} to ${end} of ${filtered.length} entries`;
+  renderPaginationInto($("#pagination"), ui.page, totalPages, (p) => { ui.page = p; renderDashboardTable(); });
+}
 
-/* ---------- Pagination ---------- */
-function renderPagination() {
-  const { currentPage, totalPages } = STATE;
-  const pages = [];
-  pages.push(1);
+function renderPaginationInto(container, currentPage, totalPages, onNavigate) {
+  const pages = [1];
   if (currentPage > 3) pages.push("...");
   for (let p = Math.max(2, currentPage - 1); p <= Math.min(totalPages - 1, currentPage + 1); p++) {
     if (!pages.includes(p)) pages.push(p);
   }
   if (currentPage < totalPages - 2) pages.push("...");
-  if (!pages.includes(totalPages)) pages.push(totalPages);
+  if (totalPages > 1 && !pages.includes(totalPages)) pages.push(totalPages);
 
   let html = `<button class="page-btn ${currentPage === 1 ? "disabled" : ""}" data-nav="prev">&lsaquo;</button>`;
   pages.forEach(p => {
-    if (p === "...") {
-      html += `<span class="page-btn ellipsis">…</span>`;
-    } else {
-      html += `<button class="page-btn ${p === currentPage ? "active" : ""}" data-page="${p}">${p}</button>`;
-    }
+    html += p === "..."
+      ? `<span class="page-btn ellipsis">…</span>`
+      : `<button class="page-btn ${p === currentPage ? "active" : ""}" data-page="${p}">${p}</button>`;
   });
   html += `<button class="page-btn ${currentPage === totalPages ? "disabled" : ""}" data-nav="next">&rsaquo;</button>`;
+  container.innerHTML = html;
 
-  $("#pagination").innerHTML = html;
+  container.onclick = (e) => {
+    const btn = e.target.closest("button");
+    if (!btn || btn.classList.contains("disabled")) return;
+    if (btn.dataset.nav === "prev") onNavigate(currentPage - 1);
+    else if (btn.dataset.nav === "next") onNavigate(currentPage + 1);
+    else if (btn.dataset.page) onNavigate(parseInt(btn.dataset.page, 10));
+  };
 }
 
-function bindPagination() {
-  $("#pagination").addEventListener("click", (e) => {
-    const btn = e.target.closest("button");
-    if (!btn) return;
-    if (btn.classList.contains("disabled")) return;
-
-    if (btn.dataset.nav === "prev" && STATE.currentPage > 1) STATE.currentPage--;
-    else if (btn.dataset.nav === "next" && STATE.currentPage < STATE.totalPages) STATE.currentPage++;
-    else if (btn.dataset.page) STATE.currentPage = parseInt(btn.dataset.page, 10);
-
-    renderPagination();
-    // Note: this demo only ships page 1's data; page changes update the
-    // pager UI. Wire renderTable() to real paged data when you add an API.
+function bindEquipmentRowActions(tbodyEl) {
+  tbodyEl.addEventListener("click", (e) => {
+    const actionEl = e.target.closest("[data-action]");
+    if (!actionEl) return;
+    const id = parseInt(actionEl.closest("tr").dataset.id, 10);
+    const action = actionEl.dataset.action;
+    if (action === "view") openViewEquipmentModal(id);
+    else if (action === "edit") openEditEquipmentModal(id);
+    else if (action === "more") {
+      openDropdown(actionEl, [
+        { label: "View details", onClick: () => openViewEquipmentModal(id) },
+        { label: "Edit", onClick: () => openEditEquipmentModal(id) },
+        { label: "Delete", danger: true, onClick: () => confirmDeleteEquipment(id) }
+      ]);
+    }
   });
 }
 
-/* ---------- Search ---------- */
+/* ---------- Search (dashboard) ---------- */
 function bindSearch() {
   $("#searchInput").addEventListener("input", (e) => {
-    renderTable(e.target.value);
+    STATE.ui.dashboard.search = e.target.value;
+    STATE.ui.dashboard.page = 1;
+    renderDashboardTable();
   });
 }
 
-/* ---------- Sidebar nav (simple active-state toggle) ---------- */
+/* ---------- Card menus ---------- */
+function bindCardMenus() {
+  $("#statusMenuBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    openDropdown(e.currentTarget, [
+      { label: "Refresh", onClick: () => { refreshAfterDataChange(); showToast("Status overview refreshed"); } },
+      { label: "Export equipment (CSV)", onClick: exportEquipmentCsv }
+    ]);
+  });
+  $("#viewAllAlertsLink").addEventListener("click", (e) => {
+    e.preventDefault();
+    goToPage("Alerts");
+  });
+}
+
+function exportEquipmentCsv() {
+  const header = ["Name", "Model", "Type", "Location", "Status", "Last Check"];
+  const lines = STATE.equipment.map(e => [e.name, e.model, e.type, e.location, e.status, e.lastCheck]
+    .map(v => `"${String(v).replace(/"/g, '""')}"`).join(","));
+  const csv = [header.join(","), ...lines].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "equipment-export.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast("Equipment exported as CSV");
+}
+
+/* ---------- Misc top-level buttons ---------- */
+function bindMisc() {
+  $("#addEquipmentBtn").addEventListener("click", openAddEquipmentModal);
+  $("#bellBtn").addEventListener("click", () => goToPage("Alerts"));
+}
+
+/* ==========================================================
+   Sidebar navigation / secondary pages
+   ========================================================== */
+const PAGE_META = {
+  Dashboard:   { title: "Dashboard",   subtitle: "Overview of all monitored equipment" },
+  Equipment:   { title: "Equipment",   subtitle: "Manage all monitored equipment" },
+  Alerts:      { title: "Alerts",      subtitle: "Active and recent alerts across your equipment" },
+  Maintenance: { title: "Maintenance", subtitle: "Scheduled and upcoming maintenance tasks" },
+  Reports:     { title: "Reports",     subtitle: "Export data for offline reporting" },
+  Locations:   { title: "Locations",   subtitle: "Equipment grouped by physical location" },
+  Users:       { title: "Users",       subtitle: "People with access to this dashboard" },
+  Settings:    { title: "Settings",    subtitle: "Preferences for this dashboard" }
+};
+
+function goToPage(pageName) {
+  const navItem = $(`.nav-item[data-page="${pageName}"]`);
+  if (navItem) navItem.click();
+}
+
 function bindNav() {
-  document.querySelectorAll(".nav-item").forEach(item => {
+  $$(".nav-item").forEach(item => {
     item.addEventListener("click", (e) => {
       e.preventDefault();
-      document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+      $$(".nav-item").forEach(i => i.classList.remove("active"));
       item.classList.add("active");
+      const pageName = item.dataset.page;
+      STATE.ui.activePage = pageName;
+
+      const meta = PAGE_META[pageName] || { title: pageName, subtitle: "" };
+      $(".topbar h1").textContent = meta.title;
+      $(".topbar .subtitle").textContent = meta.subtitle;
+
+      const dashboardEl = $("#page-dashboard");
+      const otherEl = $("#page-other");
+      if (pageName === "Dashboard") {
+        dashboardEl.style.display = "";
+        otherEl.style.display = "none";
+        renderDashboardTable();
+      } else {
+        dashboardEl.style.display = "none";
+        otherEl.style.display = "";
+        renderPage(pageName);
+      }
     });
   });
 }
 
-/* ---------- Misc buttons ---------- */
-function bindMisc() {
-  $("#addEquipmentBtn").addEventListener("click", () => {
-    alert("Add Equipment: hook this button up to your create-equipment flow.");
+function renderPage(pageName, presetSearch) {
+  const container = $("#page-other");
+  if (presetSearch !== undefined) STATE.ui.equipmentPage.search = presetSearch;
+  const renderers = {
+    Equipment: renderEquipmentPage,
+    Alerts: renderAlertsPage,
+    Maintenance: renderMaintenancePage,
+    Reports: renderReportsPage,
+    Locations: renderLocationsPage,
+    Users: renderUsersPage,
+    Settings: renderSettingsPage
+  };
+  const fn = renderers[pageName];
+  container.innerHTML = fn ? fn() : `<div class="card"><p>Nothing here yet.</p></div>`;
+  const mounters = {
+    Equipment: mountEquipmentPage,
+    Alerts: mountAlertsPage,
+    Maintenance: mountMaintenancePage,
+    Reports: mountReportsPage,
+    Locations: mountLocationsPage,
+    Users: mountUsersPage,
+    Settings: mountSettingsPage
+  };
+  if (mounters[pageName]) mounters[pageName](container);
+}
+
+/* ----- Equipment page ----- */
+function renderEquipmentPage() {
+  return `
+    <section class="card table-card">
+      <div class="card-head table-head">
+        <h2>All Equipment</h2>
+        <div class="table-actions">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchInputFull" placeholder="Search equipment..." value="${escapeHtml(STATE.ui.equipmentPage.search)}">
+          </div>
+          <button class="btn-primary" id="addEquipmentBtnFull">+ Add Equipment</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Equipment Name</th><th>Type</th><th>Location</th><th>Status</th><th>Last Check</th><th class="th-action">Action</th>
+            </tr>
+          </thead>
+          <tbody id="equipmentBodyFull"></tbody>
+        </table>
+      </div>
+      <div class="table-footer">
+        <span class="entries-label" id="entriesLabelFull"></span>
+        <div class="pagination" id="paginationFull"></div>
+      </div>
+    </section>
+  `;
+}
+function renderEquipmentPageTable() {
+  const ui = STATE.ui.equipmentPage;
+  const { rows, filtered, totalPages } = paginatedRows(STATE.equipment, ui);
+  $("#equipmentBodyFull").innerHTML = rows.map(equipmentRowHtml).join("")
+    || `<tr><td colspan="6" style="text-align:center;color:var(--text-sub);padding:24px;">No equipment matches your search.</td></tr>`;
+  const start = filtered.length ? (ui.page - 1) * ui.pageSize + 1 : 0;
+  const end = Math.min(ui.page * ui.pageSize, filtered.length);
+  $("#entriesLabelFull").textContent = `Showing ${start} to ${end} of ${filtered.length} entries`;
+  renderPaginationInto($("#paginationFull"), ui.page, totalPages, (p) => { ui.page = p; renderEquipmentPageTable(); });
+}
+function mountEquipmentPage(container) {
+  renderEquipmentPageTable();
+  $("#searchInputFull", container).addEventListener("input", (e) => {
+    STATE.ui.equipmentPage.search = e.target.value;
+    STATE.ui.equipmentPage.page = 1;
+    renderEquipmentPageTable();
   });
-  $("#bellBtn").addEventListener("click", () => {
-    document.querySelector('.nav-item[data-page="Alerts"]').click();
+  $("#addEquipmentBtnFull", container).addEventListener("click", openAddEquipmentModal);
+  bindEquipmentRowActions($("#equipmentBodyFull", container));
+}
+// Keep the Equipment page's table in sync whenever data changes elsewhere.
+const _origRefresh = refreshAfterDataChange;
+
+/* ----- Alerts page ----- */
+function renderAlertsPage() {
+  return `
+    <section class="card">
+      <div class="page-head">
+        <h2>All Alerts</h2>
+        <button class="btn-secondary" id="markAllReadBtn">Dismiss All</button>
+      </div>
+      <ul class="alert-list" id="alertListFull"></ul>
+    </section>
+  `;
+}
+function renderAlertsListFull() {
+  const list = STATE.alerts.filter(a => !a.dismissed);
+  $("#alertListFull").innerHTML = list.map(a => `
+    <li class="alert-item">
+      <div class="alert-ico ${a.level}">${ALERT_ICONS[a.level]}</div>
+      <div class="alert-main-row">
+        <div class="alert-body">
+          <div class="alert-title">${escapeHtml(a.title)}</div>
+          <div class="alert-sub">${escapeHtml(a.sub)}</div>
+        </div>
+        <div class="alert-time">${a.time}</div>
+      </div>
+      <button class="modal-close" title="Dismiss" data-dismiss="${a.id}" style="margin-left:8px;">✕</button>
+    </li>
+  `).join("") || `<li class="empty-state">No alerts. All clear.</li>`;
+}
+function mountAlertsPage(container) {
+  renderAlertsListFull();
+  $("#alertListFull", container).addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-dismiss]");
+    if (!btn) return;
+    const id = parseInt(btn.dataset.dismiss, 10);
+    const a = STATE.alerts.find(x => x.id === id);
+    if (a) a.dismissed = true;
+    renderAlertsListFull();
+    renderAlerts();
+  });
+  $("#markAllReadBtn", container).addEventListener("click", () => {
+    STATE.alerts.forEach(a => a.dismissed = true);
+    renderAlertsListFull();
+    renderAlerts();
+    showToast("All alerts dismissed");
   });
 }
 
-/* ---------- Firebase connection check ----------
-   firebase-config.js loads first and dispatches this event once
-   initializeApp()/getDatabase() have run. This is just a visibility
-   hook for now — the dashboard below still renders from STATE.
-   Swap that out once you decide what should read from window.firebaseDb. */
+/* ----- Maintenance page ----- */
+function renderMaintenancePage() {
+  return `
+    <section class="card">
+      <div class="page-head">
+        <h2>Maintenance Tasks</h2>
+        <button class="btn-primary" id="addTaskBtn">+ Add Task</button>
+      </div>
+      <div class="simple-list" id="taskList"></div>
+    </section>
+  `;
+}
+function renderTaskList() {
+  const list = STATE.maintenanceTasks;
+  $("#taskList").innerHTML = list.map(t => `
+    <div class="simple-row ${t.done ? "done" : ""}" data-id="${t.id}">
+      <div class="check-circle ${t.done ? "checked" : ""}" data-toggle="${t.id}">${t.done ? "✓" : ""}</div>
+      <div class="body">
+        <div class="title">${escapeHtml(t.title)}</div>
+        <div class="sub">Due: ${t.due}</div>
+      </div>
+      <div class="meta">${t.done ? "Completed" : "Pending"}</div>
+    </div>
+  `).join("") || `<div class="empty-state">No maintenance tasks scheduled.</div>`;
+}
+function mountMaintenancePage(container) {
+  renderTaskList();
+  $("#taskList", container).addEventListener("click", (e) => {
+    const toggle = e.target.closest("[data-toggle]");
+    if (!toggle) return;
+    const id = parseInt(toggle.dataset.toggle, 10);
+    const task = STATE.maintenanceTasks.find(t => t.id === id);
+    if (task) task.done = !task.done;
+    renderTaskList();
+  });
+  $("#addTaskBtn", container).addEventListener("click", () => {
+    const eqOptions = STATE.equipment.map(e => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join("");
+    openModal({
+      title: "Add Maintenance Task",
+      bodyHtml: `
+        <form id="taskForm">
+          <div class="form-row"><label for="tTitle">Task Title</label><input type="text" id="tTitle" placeholder="e.g. Replace toner cartridge"></div>
+          <div class="form-row"><label for="tEquipment">Equipment</label><select id="tEquipment">${eqOptions}</select></div>
+          <div class="form-row"><label for="tDue">Due</label><input type="text" id="tDue" placeholder="e.g. Tomorrow, In 3 days"></div>
+        </form>
+      `,
+      footerHtml: `<button type="button" class="btn-secondary" data-close-modal>Cancel</button><button type="button" class="btn-primary" id="submitTask">Add Task</button>`,
+      onMount: (overlay) => {
+        $("#submitTask", overlay).addEventListener("click", () => {
+          const eq = findEquipment(parseInt($("#tEquipment", overlay).value, 10));
+          const titleInput = $("#tTitle", overlay).value.trim();
+          STATE.maintenanceTasks.push({
+            id: nextTaskId++,
+            title: titleInput || `Routine check — ${eq ? eq.name : "Equipment"}`,
+            equipmentId: eq ? eq.id : null,
+            due: $("#tDue", overlay).value.trim() || "Unscheduled",
+            done: false
+          });
+          renderTaskList();
+          closeModal();
+          showToast("Task added");
+        });
+      }
+    });
+  });
+}
+
+/* ----- Reports page ----- */
+function renderReportsPage() {
+  return `
+    <section class="card">
+      <h2 style="margin-bottom:6px;">Export Reports</h2>
+      <p class="form-hint" style="margin-bottom:18px;">Downloads generate from the current in-memory data.</p>
+      <div class="simple-list">
+        <div class="simple-row">
+          <div class="ico">🖥</div>
+          <div class="body"><div class="title">Equipment Report</div><div class="sub">All ${STATE.equipment.length} equipment records — CSV</div></div>
+          <button class="btn-secondary" id="reportEquipmentBtn">Download</button>
+        </div>
+        <div class="simple-row">
+          <div class="ico">🔔</div>
+          <div class="body"><div class="title">Alerts Report</div><div class="sub">${STATE.alerts.filter(a => !a.dismissed).length} active alerts — CSV</div></div>
+          <button class="btn-secondary" id="reportAlertsBtn">Download</button>
+        </div>
+      </div>
+    </section>
+  `;
+}
+function mountReportsPage(container) {
+  $("#reportEquipmentBtn", container).addEventListener("click", exportEquipmentCsv);
+  $("#reportAlertsBtn", container).addEventListener("click", () => {
+    const header = ["Title", "Detail", "Level", "Time"];
+    const lines = STATE.alerts.filter(a => !a.dismissed).map(a => [a.title, a.sub, a.level, a.time]
+      .map(v => `"${String(v).replace(/"/g, '""')}"`).join(","));
+    const csv = [header.join(","), ...lines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "alerts-export.csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    showToast("Alerts exported as CSV");
+  });
+}
+
+/* ----- Locations page ----- */
+function renderLocationsPage() {
+  const byLocation = {};
+  STATE.equipment.forEach(e => { byLocation[e.location] = (byLocation[e.location] || 0) + 1; });
+  const cards = Object.entries(byLocation).map(([loc, count]) => `
+    <div class="location-card" data-location="${escapeHtml(loc)}">
+      <div class="loc-name">📍 ${escapeHtml(loc)}</div>
+      <div class="loc-count">${count} equipment</div>
+    </div>
+  `).join("");
+  return `
+    <section class="card">
+      <div class="page-head"><h2>Locations</h2></div>
+      <div class="locations-grid">${cards}</div>
+    </section>
+  `;
+}
+function mountLocationsPage(container) {
+  $$(".location-card", container).forEach(card => {
+    card.addEventListener("click", () => {
+      goToPage("Equipment");
+      STATE.ui.equipmentPage.search = card.dataset.location;
+      STATE.ui.equipmentPage.page = 1;
+      renderEquipmentPageTable();
+      const input = $("#searchInputFull");
+      if (input) input.value = card.dataset.location;
+    });
+  });
+}
+
+/* ----- Users page ----- */
+function renderUsersPage() {
+  return `
+    <section class="card">
+      <div class="page-head">
+        <h2>Users</h2>
+        <button class="btn-primary" id="addUserBtn">+ Add User</button>
+      </div>
+      <div class="simple-list" id="userList"></div>
+    </section>
+  `;
+}
+function renderUserList() {
+  $("#userList").innerHTML = STATE.users.map(u => `
+    <div class="simple-row" data-id="${u.id}">
+      <div class="ico">👤</div>
+      <div class="body"><div class="title">${escapeHtml(u.name)}</div><div class="sub">${escapeHtml(u.email)}</div></div>
+      <div class="meta">${escapeHtml(u.role)}</div>
+      <button class="modal-close" title="Remove user" data-remove-user="${u.id}">✕</button>
+    </div>
+  `).join("");
+}
+function mountUsersPage(container) {
+  renderUserList();
+  $("#userList", container).addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-remove-user]");
+    if (!btn) return;
+    const id = parseInt(btn.dataset.removeUser, 10);
+    STATE.users = STATE.users.filter(u => u.id !== id);
+    renderUserList();
+    showToast("User removed");
+  });
+  $("#addUserBtn", container).addEventListener("click", () => {
+    openModal({
+      title: "Add User",
+      bodyHtml: `
+        <form id="userForm">
+          <div class="form-row"><label for="uName">Name</label><input type="text" id="uName" placeholder="Full name"></div>
+          <div class="form-row"><label for="uEmail">Email</label><input type="email" id="uEmail" placeholder="name@company.com"></div>
+          <div class="form-row"><label for="uRole">Role</label>
+            <select id="uRole"><option>System Admin</option><option>IT Technician</option><option>Viewer</option></select>
+          </div>
+        </form>
+      `,
+      footerHtml: `<button type="button" class="btn-secondary" data-close-modal>Cancel</button><button type="button" class="btn-primary" id="submitUser">Add User</button>`,
+      onMount: (overlay) => {
+        $("#submitUser", overlay).addEventListener("click", () => {
+          const name = $("#uName", overlay).value.trim();
+          if (!name) { $("#uName", overlay).focus(); return; }
+          STATE.users.push({ id: nextUserId++, name, email: $("#uEmail", overlay).value.trim() || "—", role: $("#uRole", overlay).value });
+          renderUserList();
+          closeModal();
+          showToast("User added");
+        });
+      }
+    });
+  });
+}
+
+/* ----- Settings page ----- */
+function renderSettingsPage() {
+  const s = STATE.settings;
+  return `
+    <section>
+      <div class="settings-block">
+        <div class="settings-item">
+          <div><div class="s-title">Dark theme</div><div class="s-sub">Switch the dashboard to a dark color scheme</div></div>
+          <label class="switch"><input type="checkbox" id="toggleTheme" ${s.theme === "dark" ? "checked" : ""}><span class="track"></span></label>
+        </div>
+        <div class="settings-item">
+          <div><div class="s-title">Notifications</div><div class="s-sub">Show the alert badge in the top bar</div></div>
+          <label class="switch"><input type="checkbox" id="toggleNotifications" ${s.notifications ? "checked" : ""}><span class="track"></span></label>
+        </div>
+        <div class="settings-item">
+          <div><div class="s-title">Auto-refresh</div><div class="s-sub">Periodically mark a random device as just-checked</div></div>
+          <label class="switch"><input type="checkbox" id="toggleAutoRefresh" ${s.autoRefresh ? "checked" : ""}><span class="track"></span></label>
+        </div>
+      </div>
+    </section>
+  `;
+}
+let autoRefreshTimer = null;
+function mountSettingsPage(container) {
+  $("#toggleTheme", container).addEventListener("change", (e) => {
+    STATE.settings.theme = e.target.checked ? "dark" : "light";
+    document.body.classList.toggle("theme-dark", e.target.checked);
+    showToast(`Dark theme ${e.target.checked ? "on" : "off"}`);
+  });
+  $("#toggleNotifications", container).addEventListener("change", (e) => {
+    STATE.settings.notifications = e.target.checked;
+    $("#alertCount").style.display = e.target.checked ? "" : "none";
+    showToast(`Notifications ${e.target.checked ? "on" : "off"}`);
+  });
+  $("#toggleAutoRefresh", container).addEventListener("change", (e) => {
+    STATE.settings.autoRefresh = e.target.checked;
+    if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+    if (e.target.checked) {
+      autoRefreshTimer = setInterval(() => {
+        const eq = STATE.equipment[Math.floor(Math.random() * STATE.equipment.length)];
+        if (eq) eq.lastCheck = "Just now";
+        if (STATE.ui.activePage === "Dashboard") renderDashboardTable();
+        if (STATE.ui.activePage === "Equipment") renderEquipmentPageTable();
+      }, 8000);
+    }
+    showToast(`Auto-refresh ${e.target.checked ? "enabled" : "disabled"}`);
+  });
+}
+
+/* ---------- Firebase connection check ---------- */
 window.addEventListener("firebase-ready", () => {
   console.log("[firebase] connected:", window.firebaseDb.app.options.projectId);
 });
@@ -284,12 +1098,12 @@ function init() {
   renderStatusDonut();
   renderTypeDonut();
   renderAlerts();
-  renderTable();
-  renderPagination();
-  bindPagination();
+  renderDashboardTable();
   bindSearch();
   bindNav();
   bindMisc();
+  bindCardMenus();
+  bindEquipmentRowActions($("#equipmentBody"));
 }
 
 document.addEventListener("DOMContentLoaded", init);

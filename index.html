@@ -83,6 +83,8 @@
       </div>
     </header>
 
+    <div id="page-dashboard" class="page">
+
     <!-- Stat Cards -->
     <section class="stat-grid" id="statGrid"></section>
 
@@ -92,14 +94,14 @@
       <div class="card">
         <div class="card-head">
           <h2>Equipment Status Overview</h2>
-          <button class="dots-btn" aria-label="More options">⋮</button>
+          <button class="dots-btn" id="statusMenuBtn" aria-label="More options">⋮</button>
         </div>
         <div class="donut-row">
           <div class="donut-wrap">
             <svg id="statusDonut" viewBox="0 0 200 200"></svg>
             <div class="donut-center">
               <div class="donut-total-label">Total</div>
-              <div class="donut-total-value">48</div>
+              <div class="donut-total-value" id="donutTotalValue">48</div>
             </div>
           </div>
           <ul class="legend" id="statusLegend"></ul>
@@ -109,7 +111,7 @@
       <div class="card">
         <div class="card-head">
           <h2>Alerts</h2>
-          <a href="#" class="link">View All</a>
+          <a href="#" class="link" id="viewAllAlertsLink">View All</a>
         </div>
         <ul class="alert-list" id="alertList"></ul>
       </div>
@@ -162,6 +164,10 @@
         <div class="pagination" id="pagination"></div>
       </div>
     </section>
+
+    </div>
+
+    <div id="page-other" class="page" style="display:none;"></div>
 
   </main>
 </div>
